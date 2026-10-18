@@ -65,9 +65,17 @@
   #tutorial small { display: block; letter-spacing: 2px; opacity: .7; font-size: 11px; }
   #tutorial.entra { animation: tutEntra .28s ease-out; }
   @keyframes tutEntra { from { opacity: 0; transform: translate(-50%, 10px) scale(.96); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+  #tutFechar { display: none; position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: transparent; color: #fff; font-size: 16px; line-height: 32px; padding: 0; pointer-events: auto; cursor: pointer; opacity: .8; }
+  #tutorial.ultimo #tutFechar { display: block; }
+  #tutorial.ultimo p { padding: 0 18px; }
   #tutMao { display: none; font-size: 28px; }
   #tutorial.arrastar #tutMao { display: inline-block; animation: tutArrasta 1.4s ease-in-out infinite; }
   @keyframes tutArrasta { 0% { transform: translateX(-34px); opacity: 0; } 20% { opacity: 1; } 80% { opacity: 1; } 100% { transform: translateX(34px); opacity: 0; } }
+  #tutBalao { position: absolute; width: min(64vw, 250px); transform: translate(-50%, calc(-100% - 14px)); background: #fffaf0; color: #2a2a2a; border: 2px solid #2a2a2a; border-radius: 12px; padding: 8px 11px; font-size: 13px; line-height: 1.35; text-align: center; pointer-events: none; box-shadow: 0 3px 10px rgba(0,0,0,.25); }
+  #tutBalao::after { content: ''; position: absolute; left: 50%; bottom: -9px; width: 14px; height: 14px; margin-left: -8px; background: #fffaf0; border-right: 2px solid #2a2a2a; border-bottom: 2px solid #2a2a2a; transform: rotate(45deg); }
+  #tutBalao b { color: #7a4f1d; }
+  #tutBalao.entra { animation: balaoEntra .32s ease-out; }
+  @keyframes balaoEntra { from { opacity: 0; margin-top: 10px; } to { opacity: 1; margin-top: 0; } }
   #avisos { position: absolute; left: 12px; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 92px); pointer-events: auto; background: rgba(243,234,214,.95); border-radius: 10px; padding: 8px 12px; box-shadow: 0 2px 8px rgba(0,0,0,.25); font-size: 14px; }
   #avisos p { margin: 4px 0; }
   #objetivos { position: absolute; right: 14px; top: calc(env(safe-area-inset-top, 0px) + 176px); max-width: 150px; background: rgba(243,234,214,.92); border-radius: 12px; padding: 6px 10px; box-shadow: 0 1px 3px rgba(0,0,0,.2); font-size: 13px; line-height: 1.35; pointer-events: none; }
@@ -98,7 +106,7 @@
   <div id="toast"></div>
   <div id="avisos" class="oculto"></div>
   <div id="objetivos" class="oculto"></div>
-  <div id="tutorial" class="oculto"><p id="tutTexto"></p><span id="tutMao">👆</span><small id="tutPontos"></small></div>
+  <div id="tutBalao" class="oculto"><span id="tutBalaoTexto"></span></div><div id="tutorial" class="oculto"><button id="tutFechar" aria-label="Fechar">✕</button><p id="tutTexto"></p><span id="tutMao">👆</span><small id="tutPontos"></small></div>
   <div id="stick"><div id="pino"></div></div>
   <button id="btnAlto" class="oculto">Segure para olhar</button>
   <button id="btnCavalo" class="oculto">Montar</button>
@@ -268,14 +276,17 @@ var CONFIG = {
           corTipo: { acampamento: '#a33', vila: '#3b7d3b', mina: '#b8860b', torre: '#7a3b2e', castelo: '#5a4a7a', ruina: '#6b6b6b' },
           letraTipo: { acampamento: 'A', vila: 'V', mina: 'M', torre: 'T', castelo: 'C', ruina: 'R' } },
 
-  // tutorial da primeira expedição (52_tutorial.js): ~13 s se o jogador já sai andando
-  // passo com andar: espera min segundos e o jogador andar `andar` unidades; os outros duram `dura` segundos
-  tutorial: { andar: 3, passos: [
-    { andar: true, min: 1, texto: '<b>Arraste</b> para andar.<br>Mais longe corre, mas faz barulho.' },
-    { dura: 3, texto: 'O que você vê fica <b>a lápis</b>.<br>Pare perto de algo para anotar.' },
-    { dura: 3, texto: '<b>Torres e patrulhas</b> veem no cone.<br>Parado no mato, você se esconde.' },
-    { dura: 3, texto: 'Andar gasta <b>ração</b>; correr gasta mais.<br>Sem ração, você fica lento.' },
-    { dura: 3, texto: '<b>Volte à base</b> antes da noite:<br>só o que chega em casa vira mapa.' } ] },
+  // tutorial da primeira expedição (52_tutorial.js): sem tempo, cada passo espera a ação do jogador
+  // espera: andar (anda `andar` unidades), correr (corre `correr` s), avistar (1º lugar no caderno), tinta (esse lugar a tinta; mostra `balao` sobre ele), base (entrega o relatório)
+  // dica da torre: fora da fila, aparece quando uma torre ou patrulha fica a menos de `torrePerto` e some ao se esconder `torreEsconde` s ou se afastar além de `torreLonge`
+  tutorial: { andar: 3, correr: 1, torrePerto: 20, torreEsconde: 0.6, torreLonge: 30, passos: [
+    { espera: 'andar', texto: '<b>Arraste</b> em qualquer lugar para andar.' },
+    { espera: 'correr', texto: 'Arraste <b>mais longe</b> para correr.<br>É rápido, mas faz barulho e gasta mais ração.' },
+    { espera: 'avistar', texto: 'A <b>névoa</b> esconde o reino.<br>Ande até ela para descobrir o que tem lá.' },
+    { espera: 'tinta', texto: 'Ficou <b>a lápis</b>, só um esboço.<br><b>Pare perto</b> dele para passar a tinta.',
+      balao: '<b>Por que anotar?</b> O rei não conhece estas terras. O que você anota vira o mapa do reino, e é com ele que o rei manda trabalhadores e soldados.' },
+    { espera: 'base', texto: 'Agora <b>volte à base</b> e entregue o caderno ao rei. Só o que chega em casa vira mapa: se te pegarem, você perde tudo o que está a lápis.<br>Fique de olho na <b>ração</b> e no céu. Quando escurece você enxerga menos, e quem estiver fora da base no fim do dia é capturado.' } ],
+    torre: '<b>Torres e patrulhas</b> veem no cone.<br>Desvie, ou fique <b>parado no mato</b> para se esconder.' },
 
   // base
   base: { x: 90, z: 258, raio: 9 },
@@ -2800,7 +2811,7 @@ function salvar() {
     localStorage.setItem(CHAVE_SAVE, JSON.stringify({ v: 1, seed: ESTADO.seed, mapa: mapa, relatados: ESTADO.relatados, influencia: ESTADO.influencia, dia: ESTADO.dia, postos: ESTADO.postos, baseAtual: ESTADO.baseAtual, estoque: ESTADO.estoque, era: ESTADO.era, destruidos: ESTADO.destruidos, guerra: { tomados: ESTADO.guerra.tomados, ataque: ESTADO.guerra.ataque, noticias: ESTADO.guerra.noticias, fim: ESTADO.guerra.fim } }));
   } catch (e) { /* sem armazenamento: segue sem salvar */ }
 }
-function apagarSave() { try { localStorage.removeItem(CHAVE_SAVE); localStorage.removeItem(CHAVE_TUTORIAL); } catch (e) { /* ok */ } }
+function apagarSave() { try { localStorage.removeItem(CHAVE_SAVE); localStorage.removeItem(CHAVE_TUTORIAL); localStorage.removeItem(CHAVE_TUTORIAL_PASSO); } catch (e) { /* ok */ } }
 function carregar() {
   if (PARAMS.has('reset')) { apagarSave(); return; }
   try {
@@ -2818,52 +2829,129 @@ function carregar() {
 }
 
 // ===== 52_tutorial.js
-// ---- tutorial da primeira expedição: 5 dicas curtas em sequência (~13 s), só as mecânicas principais
-// Lê ESTADO e o tempo da expedição (pausa junto com o jogo); não muda regra nenhuma. Números em CONFIG.tutorial.
-var CHAVE_TUTORIAL = 'the-scout-tutorial';
-var TUTORIAL = { ativo: false, passo: 0, inicio: 0, x0: 0, z0: 0 };
+// ---- tutorial da primeira expedição: sem tempo, cada passo só avança quando o jogador faz a ação
+// Lê ESTADO (e a câmera para o balão); não muda regra nenhuma. Textos e números em CONFIG.tutorial.
+// Captura no meio: guarda o passo e continua dele na próxima expedição. Entregar o relatório encerra.
+var CHAVE_TUTORIAL = 'the-scout-tutorial', CHAVE_TUTORIAL_PASSO = 'the-scout-tutorial-passo';
+var TUTORIAL = { ativo: false, passo: 0, x0: 0, z0: 0, correu: 0, achado: null, torre: 'espera', olheiro: null, escondido: 0, mostrado: '' };
 
 function tutorialFeito() { try { return localStorage.getItem(CHAVE_TUTORIAL) === '1'; } catch (e) { return false; } }
-function marcarTutorialFeito() { try { localStorage.setItem(CHAVE_TUTORIAL, '1'); } catch (e) { /* sem armazenamento */ } }
+function marcarTutorialFeito() { try { localStorage.setItem(CHAVE_TUTORIAL, '1'); localStorage.removeItem(CHAVE_TUTORIAL_PASSO); } catch (e) { /* sem armazenamento */ } }
+// guarda passo + 1, para 0 (nada guardado) não se confundir com o primeiro passo
+function passoGuardado() { try { return parseInt(localStorage.getItem(CHAVE_TUTORIAL_PASSO), 10) || 0; } catch (e) { return 0; } }
+function guardarPasso() { try { localStorage.setItem(CHAVE_TUTORIAL_PASSO, String(TUTORIAL.passo + 1)); } catch (e) { /* ok */ } }
 
 function criarTutorial() {
-  // primeira expedição de um save novo (ou ?tutorial para ver de novo)
+  // primeira expedição de um save novo, a seguinte se foi capturado no meio (ou ?tutorial para ver de novo)
   on('expedicao', function () {
-    var novo = ESTADO.dia === 1 && ESTADO.influencia === 0 && !tutorialFeito();
-    if (novo || (PARAMS.has('tutorial') && !TUTORIAL.visto)) iniciarTutorial();
+    var meio = passoGuardado() > 0, novo = !tutorialFeito() && ((ESTADO.dia === 1 && ESTADO.influencia === 0) || meio);
+    if (novo || (PARAMS.has('tutorial') && !TUTORIAL.visto)) iniciarTutorial(novo ? Math.max(0, passoGuardado() - 1) : 0);
   });
-  // qualquer coisa que tire o foco encerra: o jogo segue sem dica
-  ['alarme', 'relatou', 'perdeu'].forEach(function (ev) { on(ev, function () { if (TUTORIAL.ativo) fimTutorial(); }); });
+  on('relatou', function () { if (TUTORIAL.ativo) fimTutorial(); });
+  on('perdeu', function () { if (TUTORIAL.ativo) pausarTutorial(); });
+  // só o último card tem X: fechar encerra o tutorial
+  $('tutFechar').addEventListener('click', function (e) { e.stopPropagation(); if (TUTORIAL.ativo) fimTutorial(); });
 }
 
-function iniciarTutorial() {
-  TUTORIAL.ativo = true; TUTORIAL.visto = true; TUTORIAL.passo = 0; TUTORIAL.inicio = ESTADO.tempo;
-  TUTORIAL.x0 = ESTADO.jog.x; TUTORIAL.z0 = ESTADO.jog.z;
-  mostrarPassoTutorial();
+function iniciarTutorial(passo) {
+  TUTORIAL.ativo = true; TUTORIAL.visto = true; TUTORIAL.passo = Math.min(passo, CONFIG.tutorial.passos.length - 1);
+  TUTORIAL.torre = 'espera'; TUTORIAL.olheiro = null; TUTORIAL.mostrado = '';
+  comecarPasso();
+}
+
+function comecarPasso() {
+  var j = ESTADO.jog;
+  TUTORIAL.x0 = j.x; TUTORIAL.z0 = j.z; TUTORIAL.correu = 0; TUTORIAL.achado = null;
+  guardarPasso();
+}
+
+function pausarTutorial() {
+  TUTORIAL.ativo = false;   // o passo fica guardado
+  $('tutorial').classList.add('oculto'); $('tutBalao').classList.add('oculto');
 }
 
 function fimTutorial() {
   TUTORIAL.ativo = false; marcarTutorialFeito();
-  $('tutorial').classList.add('oculto');
+  $('tutorial').classList.add('oculto'); $('tutBalao').classList.add('oculto');
 }
 
-function mostrarPassoTutorial() {
-  var p = CONFIG.tutorial.passos[TUTORIAL.passo], el = $('tutorial');
-  $('tutTexto').innerHTML = p.texto;
-  $('tutPontos').textContent = CONFIG.tutorial.passos.map(function (q, i) { return i === TUTORIAL.passo ? '●' : '○'; }).join(' ');
-  el.classList.toggle('arrastar', !!p.andar);
+function mostrarTutorial(chave, texto, andar) {
+  var el = $('tutorial');
+  if (TUTORIAL.mostrado === chave) return;
+  TUTORIAL.mostrado = chave;
+  $('tutTexto').innerHTML = texto;
+  $('tutPontos').textContent = TUTORIAL.torre === 'mostrando' ? '' :
+    CONFIG.tutorial.passos.map(function (q, i) { return i === TUTORIAL.passo ? '●' : '○'; }).join(' ');
+  el.classList.toggle('arrastar', !!andar);
+  el.classList.toggle('ultimo', chave === 'p' + (CONFIG.tutorial.passos.length - 1));
   el.classList.remove('oculto', 'entra'); void el.offsetWidth; el.classList.add('entra');   // reinicia a animação de entrada
 }
 
+// primeiro lugar a lápis do caderno (o "achado" do balão)
+function primeiroLapis() {
+  for (var i = 0; i < ESTADO.caderno.length; i++) if (ESTADO.caderno[i].nivel === 1) return ESTADO.caderno[i].id;
+  return null;
+}
+
+// dica da torre: fora da fila, quando uma torre ou patrulha chega perto
+function vigiarDicaTorre(dt) {
+  var T = CONFIG.tutorial, j = ESTADO.jog;
+  if (TUTORIAL.torre === 'espera') {
+    ESTADO.olheiros.forEach(function (o) {
+      if (TUTORIAL.olheiro || o.def.tipo === 'cao' || !olheiroAtivo(o) || naBase(j.x, j.z)) return;
+      if (dist2(o.x, o.z, j.x, j.z) < T.torrePerto * T.torrePerto) { TUTORIAL.olheiro = o; TUTORIAL.torre = 'mostrando'; TUTORIAL.escondido = 0; }
+    });
+  } else if (TUTORIAL.torre === 'mostrando') {
+    var o = TUTORIAL.olheiro;
+    TUTORIAL.escondido = j.escondido ? TUTORIAL.escondido + dt : 0;
+    if (TUTORIAL.escondido >= T.torreEsconde || dist2(o.x, o.z, j.x, j.z) > T.torreLonge * T.torreLonge) { TUTORIAL.torre = 'feita'; som('lapis'); }
+  }
+}
+
+function passoPronto(p, dt) {
+  var j = ESTADO.jog;
+  if (p.espera === 'andar') return Math.hypot(j.x - TUTORIAL.x0, j.z - TUTORIAL.z0) >= CONFIG.tutorial.andar;
+  if (p.espera === 'correr') { if (j.correndo) TUTORIAL.correu += dt; return TUTORIAL.correu >= CONFIG.tutorial.correr; }
+  if (p.espera === 'avistar') return ESTADO.caderno.length > 0;
+  if (p.espera === 'tinta') {
+    if (ESTADO.caderno.some(function (e) { return e.nivel >= 2; })) return true;
+    if (!TUTORIAL.achado || !entradaDe(TUTORIAL.achado)) TUTORIAL.achado = primeiroLapis();
+    return false;
+  }
+  return false;   // base: termina no evento 'relatou'
+}
+
 function atualizarTutorial() {
+  var balao = $('tutBalao');
   if (!TUTORIAL.ativo) return;
-  if (ESTADO.fase !== 'expedicao') { fimTutorial(); return; }
-  var p = CONFIG.tutorial.passos[TUTORIAL.passo], t = ESTADO.tempo - TUTORIAL.inicio, j = ESTADO.jog;
-  // o passo de andar espera o jogador andar; os outros passam sozinhos
-  var pronto = p.andar ? t >= p.min && Math.hypot(j.x - TUTORIAL.x0, j.z - TUTORIAL.z0) >= CONFIG.tutorial.andar : t >= p.dura;
-  if (!pronto) return;
-  TUTORIAL.passo++; TUTORIAL.inicio = ESTADO.tempo;
-  if (TUTORIAL.passo >= CONFIG.tutorial.passos.length) fimTutorial(); else { mostrarPassoTutorial(); som('lapis'); }
+  if (ESTADO.fase !== 'expedicao') { $('tutorial').classList.add('oculto'); balao.classList.add('oculto'); TUTORIAL.mostrado = ''; return; }
+  var dt = Math.max(0, ESTADO.tempo - (TUTORIAL.t || ESTADO.tempo)); TUTORIAL.t = ESTADO.tempo;
+  var passos = CONFIG.tutorial.passos, p = passos[TUTORIAL.passo];
+  vigiarDicaTorre(dt);
+  if (passoPronto(p, dt) && TUTORIAL.passo < passos.length - 1) {
+    TUTORIAL.passo++; p = passos[TUTORIAL.passo]; comecarPasso(); som('lapis');
+  }
+  // sem lápis no caderno (capturado e voltou), o passo da tinta volta a pedir para avistar
+  if (p.espera === 'tinta' && !passoPronto(p, 0) && !TUTORIAL.achado) {
+    TUTORIAL.passo--; p = passos[TUTORIAL.passo]; comecarPasso();
+  }
+  if (TUTORIAL.torre === 'mostrando') mostrarTutorial('torre', CONFIG.tutorial.torre, false);
+  else mostrarTutorial('p' + TUTORIAL.passo, p.texto, p.espera === 'andar');
+  posicionarBalao(balao, p.espera === 'tinta' && TUTORIAL.torre !== 'mostrando' ? TUTORIAL.achado : null, p.balao);
+}
+
+// balão preso em cima do lugar achado, na posição dele na tela
+var TUT_V = null;
+function posicionarBalao(el, id, texto) {
+  var d = id && descPorId(id);
+  if (!d || !window.THREE || !R.camera) { el.classList.add('oculto'); return; }
+  if (!TUT_V) TUT_V = new window.THREE.Vector3();
+  if (el.dataset.id !== id) { el.dataset.id = id; $('tutBalaoTexto').innerHTML = texto; el.classList.remove('entra'); void el.offsetWidth; el.classList.add('entra'); }
+  TUT_V.set(d.x, alturaEm(d.x, d.z) + alturaDe(d) + 0.6, d.z).project(R.camera);
+  var fora = TUT_V.z > 1 || Math.abs(TUT_V.x) > 1.1 || Math.abs(TUT_V.y) > 1.1;
+  el.classList.toggle('oculto', fora);
+  el.style.left = ((TUT_V.x + 1) / 2 * window.innerWidth).toFixed(0) + 'px';
+  el.style.top = ((1 - TUT_V.y) / 2 * window.innerHeight).toFixed(0) + 'px';
 }
 
 // ===== 55_mapa.js
