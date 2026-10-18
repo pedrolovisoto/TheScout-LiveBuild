@@ -226,7 +226,10 @@ var CONFIG = {
   // reino: trabalhadores levam recursos dos locais relatados para a cidade (estoque)
   reino: { velTrabalhador: 2.6, tempoTrabalho: 6, carga: 5, atrasoEntre: 5, folgaRota: 3, recursos: ['comida', 'madeira', 'pedra', 'ouro'],
            corRecurso: { comida: '#d9b44a', madeira: '#8a5a34', pedra: '#8c8c8c', ouro: '#f0c419' },
-           nomeTrabalhador: { comida: 'fazendeiro', madeira: 'lenhador', pedra: 'minerador', ouro: 'minerador' } },
+           nomeTrabalhador: { comida: 'fazendeiro', madeira: 'lenhador', pedra: 'minerador', ouro: 'minerador' },
+           // dica do rei na saída: pede um local de cada, na ordem do custo das eras (o mais perto da cidade); com todos relatados, volta ao boato do castelo
+           pedidoRei: ['comida', 'madeira', 'pedra', 'ouro'],
+           pistaRecurso: { comida: 'terra boa para plantar', pedra: 'pedra boa para tirar', madeira: 'madeira boa para cortar', ouro: 'um veio de ouro' } },
 
   // bandidos: acampamento ainda não achado rouba trabalhadores de locais no raio, no meio da volta
   bandidos: { raio: 60, chance: 0.5, leva: 0.6, balao: 8 },
@@ -1225,10 +1228,19 @@ function revelarTela() {
   }
 }
 
+// primeiro recurso da lista do rei sem nenhum local relatado, com o local dele mais perto da cidade; null = já tem um de cada
+function pedidoDoRei() {
+  var b = CONFIG.base, rec = CONFIG.reino.pedidoRei.filter(function (r) { return !locaisRecurso().some(function (d) { return d.recurso === r; }); })[0];
+  if (!rec) return null;
+  var locais = DESCOBERTAS.filter(function (d) { return d.recurso === rec; }).sort(function (p, q) { return dist2(p.x, p.z, b.x, b.z) - dist2(q.x, q.z, b.x, b.z); });
+  return { recurso: rec, local: locais[0] };
+}
 // ---- avisos na saída da expedição (as notícias do campo só chegam na base)
 function avisosSaida() {
   var av = [], at = ESTADO.guerra.ataque, b = CONFIG.base;
-  if (ESTADO.dia === 1 && !ESTADO.relatados.castelo) av.push('O rei ouviu um boato: o reino rival fica ao ' + direcaoDe(b, descPorId('castelo')) + ', além do rio.');
+  var pede = pedidoDoRei();
+  if (pede) av.push('O rei precisa de ' + pede.recurso + '. Dizem que há ' + CONFIG.reino.pistaRecurso[pede.recurso] + ' ao ' + direcaoDe(b, pede.local) + ' da cidade.');
+  else if (!ESTADO.relatados.castelo) av.push('O rei ouviu um boato: o reino rival fica ao ' + direcaoDe(b, descPorId('castelo')) + ', além do rio.');
   if (ESTADO.guerra.tropa) av.push('A batalha será hoje: o exército marcha contra ' + descPorId(at.alvo).nome + '. Dá para assistir do alto de um mirante.');
   var al = ESTADO.reino.alertas;
   Object.keys(al).forEach(function (id) {
@@ -1317,7 +1329,9 @@ function criarRender() {
 
   // relevo: topo dos platôs (com a textura do chão) e paredes de pedra
   // em blocos de VISUAL.blocoRelevo: o que fica fora da vista não é desenhado (nem o chão, nem a névoa e o lápis por cima)
-  var matTopos = matToon({ map: texChao, vertexColors: true }), matParedes = matToon({ vertexColors: true }), blocosRelevo = [], posContorno = [];
+  var matTopos = matToon({ map: texChao, vertexColors: true }), matParedes = matToon({ vertexColors: true, side: THREE.DoubleSide, shadowSide: THREE.BackSide }), blocosRelevo = [], posContorno = [];
+  // paredes dos dois lados: a dobra da rocha às vezes fica em balanço e a face de cima vira de costas para a câmera (fresta);
+  // na sombra só o verso, como antes (os dois lados riscam a parede de listras de acne)
   var tr = VISUAL.blocoRelevo / c, toposLista = [];
   for (var bj = 0; bj * tr < A; bj++) for (var bi = 0; bi * tr < L; bi++) {
     var gb = geometriaRelevo(THREE, bi * tr, Math.min(L, (bi + 1) * tr), bj * tr, Math.min(A, (bj + 1) * tr), blocosRelevo.length);
@@ -1576,27 +1590,40 @@ function geometriaRelevo(THREE, i0, i1, j0, j1, semente) {   // só as células 
   RNG.seed(ESTADO.seed + 31 + semente * 101);
   // parede entre as amostras sa (de um lado) e sb, na aresta de k1 a k2 (cantos da grade fina)
   function parede(k1, k2, sa, sb, nx, nz) {
-    var p1 = canto(k1[0], k1[1]), p2 = canto(k2[0], k2[1]), o1x = k1[0] * P, o1z = k1[1] * P, o2x = k2[0] * P, o2z = k2[1] * P;
-    var a1 = hAm(sa, o1x, o1z), a2 = hAm(sa, o2x, o2z), b1 = hAm(sb, o1x, o1z), b2 = hAm(sb, o2x, o2z);
+    // alturas no canto deslocado, como o topo calcula: na rampa a altura muda com a posição e a parede descolaria do chão
+    var p1 = canto(k1[0], k1[1]), p2 = canto(k2[0], k2[1]);
+    var a1 = hAm(sa, p1[0], p1[1]), a2 = hAm(sa, p2[0], p2[1]), b1 = hAm(sb, p1[0], p1[1]), b2 = hAm(sb, p2[0], p2[1]);
     if (Math.abs(a1 - b1) < 0.01 && Math.abs(a2 - b2) < 0.01) return;
     if (a1 + a2 < b1 + b2) { nx = -nx; nz = -nz; }   // a face olha para o lado mais baixo
     var alto = a1 + a2 >= b1 + b2, t1 = alto ? a1 : b1, t2 = alto ? a2 : b2, f1 = alto ? b1 : a1, f2 = alto ? b2 : a2;
-    var tint = 0.9 + RNG.next() * 0.2, aba = Math.min(0.35, (t1 - f1) * 0.3, (t2 - f2) * 0.3);
+    // aba, dobra e meio saem só do canto (não da parede): as paredes vizinhas que dividem o canto batem no mesmo ponto
+    var tint = 0.9 + RNG.next() * 0.2, aba1 = abaEm(t1 - f1), aba2 = abaEm(t2 - f2);
     // beirada clara de pedra e rocha avermelhada embaixo (do claro em cima ao escuro no pé)
-    if (aba > 0.1) {
-      faixa([p1[0], t1, p1[1]], [p2[0], t2, p2[1]], [p2[0], t2 - aba, p2[1]], [p1[0], t1 - aba, p1[1]], nx, nz, mul(VISUAL.beirada, tint), mul(VISUAL.beirada, tint * 0.95));
-      t1 -= aba; t2 -= aba;
+    if (aba1 > 0 || aba2 > 0) {
+      faixa([p1[0], t1, p1[1]], [p2[0], t2, p2[1]], [p2[0], t2 - aba2, p2[1]], [p1[0], t1 - aba1, p1[1]], nx, nz, mul(VISUAL.beirada, tint), mul(VISUAL.beirada, tint * 0.95));
+      t1 -= aba1; t2 -= aba2;
     }
     var topo1 = [p1[0], t1, p1[1]], topo2 = [p2[0], t2, p2[1]], pe1 = [p1[0], f1, p1[1]], pe2 = [p2[0], f2, p2[1]];
-    if (t1 - f1 > 1.2 && t2 - f2 > 1.2) {   // penhasco alto: uma dobra no meio, empurrada pelo ruído, faz as facetas da rocha
+    if (t1 - f1 > 1.2 || t2 - f2 > 1.2) {   // penhasco alto: uma dobra no meio, empurrada pelo ruído, faz as facetas da rocha
       var m1 = meio(k1, p1, t1, f1), m2 = meio(k2, p2, t2, f2), corMeio = mul(lerpCor(VISUAL.rocha, VISUAL.rochaPe, 0.5), tint);
       faixa(topo1, topo2, m2, m1, nx, nz, mul(VISUAL.rocha, tint), corMeio);
       faixa(m1, m2, pe2, pe1, nx, nz, corMeio, mul(VISUAL.rochaPe, tint));
     } else faixa(topo1, topo2, pe2, pe1, nx, nz, mul(VISUAL.rocha, tint), mul(VISUAL.rochaPe, tint));
   }
+  function abaEm(alt) { var a = Math.min(0.35, alt * 0.3); return a > 0.1 ? a : 0; }
+  // canto baixo (até 1,2) ou onde se encontram três alturas (rampa, dois degraus) dobra reto, na própria aresta:
+  // as paredes desse canto têm alturas diferentes e cada uma dobraria num ponto, abrindo fresta entre elas
   function meio(k, p, t, f) {
+    if (t - f <= 1.2 || alturasNoCanto(k, p) > 2) return [p[0], (t + f) / 2, p[1]];
     var y = (t + f) / 2 + (rv(k[0] * 0.61 + 9, k[1] * 0.61) - 0.5) * (t - f) * 0.3, a = VISUAL.ruidoRocha;
     return [p[0] + (rv(k[0] * 0.53 + y, k[1] * 0.53) - 0.5) * a, y, p[1] + (rv(k[1] * 0.53, k[0] * 0.53 + y + 20) - 0.5) * a];
+  }
+  function alturasNoCanto(k, p) {   // quantas alturas diferentes as 4 amostras em volta do canto têm nesse ponto
+    var hs = [];
+    [am(k[0] - 1, k[1] - 1), am(k[0], k[1] - 1), am(k[0] - 1, k[1]), am(k[0], k[1])].forEach(function (s) {
+      var h = hAm(s, p[0], p[1]); if (!hs.some(function (v) { return Math.abs(v - h) < 0.01; })) hs.push(h);
+    });
+    return hs.length;
   }
   function mul(c, k) { return [c[0] * k, c[1] * k, c[2] * k]; }
   function lerpCor(a, b, t) { return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]; }
@@ -1632,8 +1659,11 @@ function geometriaRelevo(THREE, i0, i1, j0, j1, semente) {   // só as células 
     function reto(a, b) { var k = canto(a, b); return k[0] === a * P && k[1] === b * P; }
     for (var rb2 = fj0; rb2 < fj0 + nf; rb2++) for (var ra = fi0; ra < fi0 + nf; ra++) {   // topo: amostras iguais em fila viram um quadrado
       if (!livre(ra, rb2)) continue;
-      var fimA = ra, kr = chave(am(ra, rb2));
-      while (fimA + 1 < fi0 + nf && livre(fimA + 1, rb2) && chave(am(fimA + 1, rb2)) === kr && reto(fimA + 1, rb2) && reto(fimA + 1, rb2 + 1)) fimA++;
+      // só junta quadrados com todos os cantos na grade: um canto deslocado na ponta entortaria a aresta longa
+      // e abriria uma fresta (traço da cor do fundo) contra os cantos retos do vizinho
+      // nem rampa: a altura dela dobra na ponta (clamp) e o quadrado longo descolaria do vizinho
+      var fimA = ra, kr = chave(am(ra, rb2)), junta = reto(ra, rb2) && reto(ra, rb2 + 1) && !(am(ra, rb2) >= 0 && F.rampa[am(ra, rb2)] >= 0);
+      while (junta && fimA + 1 < fi0 + nf && livre(fimA + 1, rb2) && chave(am(fimA + 1, rb2)) === kr && reto(fimA + 1, rb2) && reto(fimA + 1, rb2 + 1) && reto(fimA + 2, rb2) && reto(fimA + 2, rb2 + 1)) fimA++;
       quad(canto(ra, rb2), canto(fimA + 1, rb2), canto(ra, rb2 + 1), canto(fimA + 1, rb2 + 1), am(ra, rb2));
       ra = fimA;
     }
@@ -2874,6 +2904,11 @@ function desenharMapa() {
   g.beginPath(); g.moveTo((j.x + j.dirX * 3) * esc, (j.z + j.dirZ * 3) * esc); g.lineTo(j.x * esc, j.z * esc);
   g.lineWidth = 3; g.strokeStyle = '#1d3f75'; g.stroke();
   marca(j.x, j.z, '#e8b923', 6, '');
+  // bússola: só um N com seta para cima, no canto superior direito
+  var bx = MAPA.canvas.width - 22, bz = 16;
+  g.beginPath(); g.moveTo(bx, bz); g.lineTo(bx - 7, bz + 14); g.lineTo(bx + 7, bz + 14); g.closePath(); g.fillStyle = '#2a1d0e'; g.fill();
+  g.font = 'bold 16px Georgia'; g.textAlign = 'center'; g.textBaseline = 'top'; g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.85)';
+  g.strokeText('N', bx, bz + 17); g.fillText('N', bx, bz + 17);
 }
 
 // ===== 56_guerra_ui.js
