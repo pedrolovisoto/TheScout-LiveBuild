@@ -47,6 +47,9 @@
   .ajuste { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed rgba(0,0,0,.2); gap: 12px; }
   .ajuste select, .ajuste input[type=range] { font: inherit; max-width: 55%; }
   .ajuste input[type=checkbox] { width: 22px; height: 22px; }
+  .ajuste b { white-space: nowrap; }
+  .ajGrupo { margin: 14px 0 0; font-size: 1em; }
+  .ajGrupo small { font-weight: normal; opacity: .7; }
   .bandidos { display: block; margin-top: 6px; padding: 6px 8px; border-left: 3px solid #c0392b; text-align: left; background: rgba(192,57,43,.07); }
   .ajCopiar { flex-direction: column; align-items: stretch; }
   .ajCopiar textarea { font: 12px/1.3 monospace; width: 100%; box-sizing: border-box; resize: none; border-radius: 6px; padding: 6px; }
@@ -160,7 +163,16 @@
     <label class="ajuste">Volume <input type="range" id="ajVolume" min="0" max="1" step="0.1"></label>
     <label class="ajuste">Música <input type="range" id="ajMusica" min="0" max="1" step="0.1"></label>
     <label class="ajuste">Vibração <input type="checkbox" id="ajVibrar"></label>
-    <label class="ajuste"><span>Analógico corre a partir de <b id="ajCorrerVal"></b></span> <input type="range" id="ajCorrer" min="25" max="120" step="5"></label>
+    <h3 class="ajGrupo">Analógico <small>(distância do dedo)</small></h3>
+    <label class="ajuste"><span>Ponto zero (começa a andar) <b id="ajZonaVal"></b></span> <input type="range" id="ajZona" min="2" max="40" step="1"></label>
+    <label class="ajuste"><span>Corre a partir de <b id="ajCorrerVal"></b></span> <input type="range" id="ajCorrer" min="25" max="200" step="5"></label>
+    <h3 class="ajGrupo">Velocidade a pé</h3>
+    <label class="ajuste"><span>Andar (ponto zero) <b id="ajLentoVal"></b></span> <input type="range" id="ajLento" min="0.2" max="6" step="0.1"></label>
+    <label class="ajuste"><span>Andar rápido (limiar) <b id="ajAndarVal"></b></span> <input type="range" id="ajAndar" min="0.5" max="10" step="0.1"></label>
+    <label class="ajuste"><span>Correr <b id="ajCorrerVelVal"></b></span> <input type="range" id="ajCorrerVel" min="1" max="15" step="0.1"></label>
+    <h3 class="ajGrupo">Onda do som dos passos</h3>
+    <label class="ajuste"><span>Ondulação <b id="ajOndaForcaVal"></b></span> <input type="range" id="ajOndaForca" min="0" max="3" step="0.1"></label>
+    <label class="ajuste"><span>Espessura <b id="ajOndaLargVal"></b></span> <input type="range" id="ajOndaLarg" min="0.02" max="0.4" step="0.01"></label>
     <label class="ajuste">Mostrar FPS <input type="checkbox" id="ajFpsVer"></label>
     <label class="ajuste"><span>Duração do dia <b id="ajDiaVal"></b></span> <input type="range" id="ajDia" min="60" max="600" step="10"></label>
     <label class="ajuste"><span>Entardece aos <b id="ajTardeVal"></b></span> <input type="range" id="ajTarde" min="10" max="600" step="1"></label>
@@ -189,7 +201,8 @@ var CONFIG = {
   mapaL: 90, mapaA: 135,    // células (largura x, altura z); 1,5x de lado desde 2026-10-18
 
   // batedor
-  velAndar: 4.2, velCorrer: 7.6,
+  // andar devagar logo depois da zona morta, andar rápido no limiar de correr, correr além dele (viram AJUSTES)
+  velLento: 1.5, velAndar: 4.2, velCorrer: 7.6,
   acelCorrer: 14, freioCorrer: 24,   // unid/s²: de andar a correr em ~0,25 s, de volta em ~0,15 s (andar e parar seguem instantâneos)
   fatorMato: 0.65, fatorFloresta: 0.55, fatorColina: 0.8,
   ruidoAndar: 2.5, ruidoCorrer: 9,
@@ -249,6 +262,10 @@ var CONFIG = {
            pedidoRei: ['comida', 'madeira', 'pedra', 'ouro'],
            pistaRecurso: { comida: 'terra boa para plantar', pedra: 'pedra boa para tirar', madeira: 'madeira boa para cortar', ouro: 'um veio de ouro' } },
 
+  // mercado do reino (automático, no relatório): troca o que sobra além do custo da próxima era pelo que falta para ela,
+  // só se a fonte do recurso em falta já foi relatada. `taxa` de sobra por 1 do que falta, até `limite` de cada recurso por relatório
+  mercado: { taxa: 3, limite: 10 },
+
   // bandidos: acampamento ainda não achado rouba trabalhadores de locais no raio, no meio da volta
   bandidos: { raio: 60, chance: 0.5, leva: 0.6, balao: 8 },
 
@@ -301,10 +318,16 @@ var CONFIG = {
 };
 
 // padrões = Ajustes que o Pedro usa no celular (2026-10-18): Alta, sombras, 60 fps, volume 60%, vibração, corre aos 90 px, sem FPS
-var AJUSTES_PADRAO = { v: 2, pixelRatio: 2, sombras: true, fps: 60, vibrar: true, volume: 0.6, mostrarFps: false,
-  correrAos: CONFIG.limiarCorrer,   // distância do dedo (px) em que o analógico passa a correr; o anel do analógico tem esse raio
+var AJUSTES_PADRAO = { v: 3, pixelRatio: 2, sombras: true, fps: 60, vibrar: true, volume: 0.6, mostrarFps: false,
+  // analógico em px (distância do dedo ao ponto tocado): parado até zonaMorta, transição de andar a andar rápido até correrAos, corre além
+  zonaMorta: CONFIG.zonaMorta,
+  correrAos: CONFIG.limiarCorrer,   // o anel do analógico tem esse raio
+  // velocidades a pé (unid/s), separadas dos px: viram CONFIG.velLento, velAndar e velCorrer
+  velLento: CONFIG.velLento, velAndar: CONFIG.velAndar, velCorrer: CONFIG.velCorrer,
   // duração do dia e quando entardece e anoitece, em segundos de jogo (vira CONFIG.duracaoDia, inicioTarde, inicioNoite)
   dia: CONFIG.duracaoDia, tarde: Math.round(CONFIG.duracaoDia * CONFIG.inicioTarde), noite: Math.round(CONFIG.duracaoDia * CONFIG.inicioNoite) };
+AJUSTES_PADRAO.ondaForca = 1;      // anel do som dos passos: multiplica a ondulação e o tranco da passada (0 = linha lisa)
+AJUSTES_PADRAO.ondaLargura = 0.08; // espessura da linha do anel do som, em unidades do mundo
 AJUSTES_PADRAO.musica = 0.7;   // volume da música (0 a 1, multiplica o Volume); camadas em 60_musica.js
 var AJUSTES = Object.assign({}, AJUSTES_PADRAO);
 
@@ -902,6 +925,7 @@ function consolidar() {
 function relatar() {
   concluirGuerraDia();
   var eraAntes = ESTADO.eraInicio, r = consolidar(), p = ESTADO.passaro, j = ESTADO.jog;
+  r.trocas = trocarNoMercado();
   avancarEra();
   ESTADO.baseAtual = baseEm(j.x, j.z);   // a próxima expedição sai desta base
   r.base = ESTADO.baseAtual < 0 ? 'a base' : LOCAIS_POSTO[ESTADO.baseAtual].nome;
@@ -1052,6 +1076,28 @@ function tentarRoubo(t, d) {
 function limparAlertas() {
   var al = ESTADO.reino.alertas;
   Object.keys(al).forEach(function (k) { if (ESTADO.destruidos[al[k].campo]) delete al[k]; });
+}
+
+// ---- mercado: no relatório, troca a sobra pelo que falta para a próxima era (o jogador não controla).
+// Só troca o recurso cuja fonte já foi relatada; doa só o que passa do custo da próxima era. Devolve [{ de, deu, para, recebeu }]
+function trocarNoMercado() {
+  var prox = CONFIG.eras[ESTADO.era + 1], m = CONFIG.mercado, est = ESTADO.estoque, trocas = [];
+  if (!prox || !prox.custo) return trocas;
+  var custo = prox.custo, rec = CONFIG.reino.recursos;
+  function sobra(r) { return est[r] - (custo[r] || 0); }
+  Object.keys(custo).forEach(function (r) {
+    if (est[r] >= custo[r] || !locaisRecurso().some(function (d) { return d.recurso === r; })) return;
+    var quer = Math.min(m.limite, custo[r] - est[r]);
+    rec.filter(function (o) { return o !== r && sobra(o) >= m.taxa; })
+       .sort(function (a, b) { return sobra(b) - sobra(a); })
+       .forEach(function (o) {
+         var n = Math.min(quer, Math.floor(sobra(o) / m.taxa));
+         if (n <= 0) return;
+         est[o] -= n * m.taxa; est[r] += n; quer -= n;
+         trocas.push({ de: o, deu: n * m.taxa, para: r, recebeu: n });
+       });
+  });
+  return trocas;
 }
 
 // ===== 26_cavaleiros.js
@@ -1299,6 +1345,8 @@ var VISUAL = {
   cone: [0.95, 0.62],          // luminosidade do cone de visão: calmo -> alerta
   bloco: 30, blocoRelevo: 60,  // lado dos blocos (vegetação e relevo) para o recorte pela vista
   margemX: 11, margemSul: 24, margemNorte: 34,   // a câmera não mostra além da borda do mapa
+  // saturação dos locais pelo que o batedor desenhou deles: cor cheia só depois de observar de perto
+  satAvistado: 0.15, satRelatado: 0.55,   // nunca visto ou só avistado; relatado sem observar de perto
 };
 // material com luz em degraus (toon) e faces chapadas; todo modelo do jogo usa este
 function matToon(opcoes) {
@@ -1460,10 +1508,12 @@ function criarRender() {
     new THREE.MeshBasicMaterial({ color: 0x2f5fa8, transparent: true, opacity: 0.55 }));
   anelBase.rotation.x = -Math.PI / 2; anelBase.position.set(CONFIG.base.x, alturaEm(CONFIG.base.x, CONFIG.base.z) + 0.04, CONFIG.base.z); scene.add(anelBase);
 
+  R.torres = {};   // id da descoberta torre -> modelo dentro do grupo do olheiro (para a saturação)
   R.olheiros = ESTADO.olheiros.map(function (o) {
     var grupo = new THREE.Group(), t = o.def.tipo, cone = null;
     if (t === 'torre') {
-      grupo.add(modeloDescoberta('torre'));
+      var mt = modeloDescoberta('torre'); grupo.add(mt);
+      DESCOBERTAS.forEach(function (d) { if (d.tipo === 'torre' && dist2(d.x, d.z, o.x, o.z) < 1) R.torres[d.id] = mt; });
       cone = setor();
     } else if (t === 'patrulha') {
       grupo.add(modeloCavaleiro(0x8a3b2e));
@@ -1519,7 +1569,12 @@ function criarRender() {
   capuz.position.y = 1.62;
   var sombraJog = sombraPe(1.15, 1.15); R.sombraJog = sombraJog;
   jog.add(corpo, cabeca, capuz, sombraJog); scene.add(jog);
-  var anelRuido = new THREE.Mesh(new THREE.RingGeometry(0.92, 1, 40), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }));
+  // anel do som: linha fina de raio 1 (escala = raio do ruído); 32_efeitos.js ondula os vértices a cada quadro
+  var geoOnda = new THREE.BufferGeometry(), nOnda = EFEITOS.ondaSegmentos, idxOnda = [];
+  geoOnda.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array((nOnda + 1) * 2 * 3), 3));
+  for (var io = 0; io < nOnda; io++) { var a0 = io * 2; idxOnda.push(a0, a0 + 1, a0 + 2, a0 + 1, a0 + 3, a0 + 2); }
+  geoOnda.setIndex(idxOnda); geoOnda.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.5);
+  var anelRuido = new THREE.Mesh(geoOnda, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: EFEITOS.ondaOpacidade, depthWrite: false, side: THREE.DoubleSide }));
   anelRuido.rotation.x = -Math.PI / 2; anelRuido.position.y = 0.06; scene.add(anelRuido);
 
   // névoa (pergaminho com o relevo por baixo) e lápis: camadas coladas no relevo, desenhadas por cima
@@ -1737,6 +1792,36 @@ function fundir(g) {
   fora.forEach(function (o) { o.updateMatrixWorld(true); o.matrixWorld.decompose(o.position, o.quaternion, o.scale); r.add(o); });
   return r;
 }
+// quanto de cor um local mostra: cinza até ser observado de perto (no caderno ou já relatado); relatado só de longe fica no meio
+function saturacaoDe(id) {
+  var e = entradaDe(id), rel = ESTADO.relatados[id] || 0;
+  return Math.max(e ? e.nivel : 0, rel) >= 2 ? 1 : rel ? VISUAL.satRelatado : VISUAL.satAvistado;
+}
+// leva as cores do modelo para o cinza (s 0) ou de volta à cor original (s 1); guarda o original na 1ª vez. Não cria material nem draw call
+function saturar(modelo, s) {
+  function cinza(r, g, b, i, a) { var l = r * 0.299 + g * 0.587 + b * 0.114; a[i] = lerp(l, r, s); a[i + 1] = lerp(l, g, s); a[i + 2] = lerp(l, b, s); }
+  modelo.traverse(function (o) {
+    if (!o.isMesh || o.isSprite) return;
+    var c = o.geometry.attributes.color;
+    if (c && o.material.vertexColors) {
+      var orig = o.geometry.userData.corOriginal || (o.geometry.userData.corOriginal = c.array.slice());
+      for (var i = 0; i < orig.length; i += 3) cinza(orig[i], orig[i + 1], orig[i + 2], i, c.array);
+      c.needsUpdate = true;
+    } else if (o.material.color && o.material.isMeshToonMaterial) {   // peça com material próprio (caixa de recurso)
+      var oc = o.userData.corOriginal || (o.userData.corOriginal = o.material.color.toArray()), t = [0, 0, 0];
+      cinza(oc[0], oc[1], oc[2], 0, t); o.material.color.fromArray(t);
+    }
+  });
+}
+// reaplica só quando o nível de um local muda
+function atualizarSaturacao() {
+  if (!R.sat) R.sat = {};
+  DESCOBERTAS.forEach(function (d) {
+    var m = R.descobertas[d.id] || R.torres[d.id]; if (!m) return;
+    var s = saturacaoDe(d.id); if (R.sat[d.id] === s) return;
+    R.sat[d.id] = s; saturar(m, s);
+  });
+}
 // junta geometrias (sem índice) numa só: posição e normal
 function juntarGeometrias(lista) {
   var THREE = window.THREE, pos = [], nor = [];
@@ -1879,6 +1964,7 @@ function atualizarRender(dtReal) {
   R.anelRuido.visible = j.ruido > 0;
   R.anelRuido.position.set(j.x, j.y + 0.06, j.z);
   R.anelRuido.scale.setScalar(Math.max(0.01, j.ruido));
+  atualizarSaturacao();
 
   ESTADO.olheiros.forEach(function (o, i) {
     var r = R.olheiros[i], visivel = ESTADO.nevoa[celulaDe(o.x, o.z)] > 0 || o.cav, oy = alturaEm(o.x, o.z), torre = o.def.tipo === 'torre';
@@ -2135,6 +2221,11 @@ var EFEITOS = {
   estaloTempo: 0.45,
   // tremor de câmera por trauma (Eiserloh): amplitude = trauma², queda linear
   traumaAlarme: 0.45, traumaCaptura: 0.6, traumaQueda: 1.1, tremorMax: 0.9,
+  // anel do som dos passos: linha fina (largura em unidades do mundo, não cresce com o raio) que ondula como onda sonora
+  // e dá um tranco a cada passada; a expansão continua sendo o raio do ruído (30_render.js)
+  ondaSegmentos: 128, ondaOpacidade: 0.6,   // espessura e força ficam nos Ajustes (AJUSTES.ondaLargura, ondaForca)
+  ondaAmp: 0.06, ondaPulso: 0.3, ondaPulsoCorrer: 1.6, ondaQueda: 7,   // ondulação parada; tranco da passada (x1,6 correndo); quanto ele some por s
+  ondaSenos: [[5, 6.5, 0.5], [9, -9, 0.32], [16, 13, 0.18]],             // [voltas no anel, velocidade, peso] de cada seno
   corTinta: '#2f5fa8', corPapel: '#f3ead6', corLapis: '#3a3a3a',
 };
 
@@ -2157,7 +2248,7 @@ function criarEfeitos() {
   for (var i = 0; i < E.maxParticulas; i++) lista.push({ vida: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, tam: 0, dur: 1, cor: new THREE.Color(), grav: 0 });
   R.efeitos = { med: med, cvMed: cv, txMed: tx, medProg: -2, medId: null, medPop: 0, medFim: 0, medFimTipo: '', alturas: {},
     anel: anel, anelT: -1, part: part, lista: lista, proxPart: 0, m4: new THREE.Matrix4(), euler: new THREE.Euler(), cor: new THREE.Color(),
-    poeiraT: 0, passo: 0, estalo: {}, vistos: {}, trauma: 0, semMovimento: semMovimento, hud: {}, t: 0 };
+    poeiraT: 0, passo: 0, passada: 0, onda: 0, estalo: {}, vistos: {}, trauma: 0, semMovimento: semMovimento, hud: {}, t: 0 };
 
   on('toque', function () { if (ACOES.alvo) { R.efeitos.anelT = 0; anel.position.set(ACOES.alvo.x, alturaEm(ACOES.alvo.x, ACOES.alvo.z) + 0.07, ACOES.alvo.z); } });
   on('avistou', function (e) { estalarMedalha(e.d, 'avistou'); jorrar(e.d.x, alturaDe(e.d) * 0.6, e.d.z, 10, E.corLapis, 4); });
@@ -2270,6 +2361,8 @@ function atualizarEfeitos(dt) {
     if (cav.montado && j.movendo && emJogo) { ef.passo += dt * (j.correndo ? 14 : 9); R.cavalo.position.y += Math.abs(Math.sin(ef.passo)) * (j.correndo ? 0.22 : 0.1); corpo.position.y += Math.abs(Math.sin(ef.passo)) * (j.correndo ? 0.22 : 0.1); }
   }
 
+  ondularRuido(dt, j, cav);
+
   // poeira: correr a pé ou a cavalo levanta poeira atrás
   if (emJogo && j.movendo && (j.correndo || cav.montado)) {
     ef.poeiraT -= dt;
@@ -2324,6 +2417,24 @@ function tremerCamera(dt) {
   var a = ef.trauma * ef.trauma * EFEITOS.tremorMax, t = ef.t * 18;
   function nz(s) { return Math.sin(t * 1.7 + s) * 0.5 + Math.sin(t * 2.9 + s * 1.3) * 0.3 + Math.sin(t * 5.3 + s * 2.1) * 0.2; }
   R.camera.position.x += nz(1) * a; R.camera.position.y += nz(7) * a * 0.5; R.camera.position.z += nz(13) * a * 0.5;
+}
+
+// anel do som: a cada passada (meia volta da fase do passo) a onda dá um tranco que some aos poucos
+function ondularRuido(dt, j, cav) {
+  var ef = R.efeitos, E = EFEITOS, m = R.anelRuido;
+  var p = Math.floor(ef.passo / Math.PI);
+  if (p !== ef.passada) { ef.passada = p; ef.onda = Math.max(ef.onda, j.correndo || cav.montado ? E.ondaPulsoCorrer : 1); }
+  ef.onda = Math.max(0, ef.onda - dt * E.ondaQueda * ef.onda - dt);
+  if (!m.visible) return;
+  var esc = m.scale.x, larg = AJUSTES.ondaLargura / esc, amp = ef.semMovimento ? 0 : (E.ondaAmp + ef.onda * E.ondaPulso) * AJUSTES.ondaForca / esc;
+  var pos = m.geometry.attributes.position.array, n = E.ondaSegmentos, t = ef.t, ss = E.ondaSenos;
+  for (var i = 0; i <= n; i++) {
+    var a = i / n * Math.PI * 2, w = 0;
+    for (var k = 0; k < ss.length; k++) w += Math.sin(ss[k][0] * a + ss[k][1] * t) * ss[k][2];
+    var r = Math.max(larg, 1 + amp * w), ri = r - larg, c = Math.cos(a), s = Math.sin(a), o = i * 6;
+    pos[o] = c * r; pos[o + 1] = s * r; pos[o + 2] = 0; pos[o + 3] = c * ri; pos[o + 4] = s * ri; pos[o + 5] = 0;
+  }
+  m.geometry.attributes.position.needsUpdate = true;
 }
 
 // ===== 35_render_reino.js
@@ -2520,7 +2631,9 @@ function criarInput() {
     var limiar = AJUSTES.correrAos;   // sensibilidade escolhida nos Ajustes
     // folga: quem já corre só volta a andar um pouco antes do limiar (o dedo tremendo na borda não fica alternando)
     ACOES.correr = d >= (ACOES.correr ? limiar - CONFIG.folgaCorrer : limiar);
-    ACOES.mag = ACOES.correr ? 1 : Math.max(0.35, Math.min(1, d / limiar));
+    // mag = fração de velAndar: da zona morta ao limiar vai de velLento a velAndar (os px não mexem nas velocidades)
+    var t = clamp((d - CONFIG.zonaMorta) / (limiar - CONFIG.zonaMorta), 0, 1);
+    ACOES.mag = ACOES.correr ? 1 : lerp(CONFIG.velLento / CONFIG.velAndar, 1, t);
     var lim = Math.min(d, limiar + 15);
     pino.style.transform = 'translate(' + (dx / d * lim) + 'px,' + (dy / d * lim) + 'px)';
     stick.classList.toggle('correndo', ACOES.correr);
@@ -2635,6 +2748,12 @@ function atualizarUI() {
   setTexto('btnCavalo', ESTADO.cavalo.montado ? 'Desmontar' : 'Montar');
 }
 
+// linha do mercado no relatório: o que o reino trocou sozinho para chegar à próxima era
+function textoMercado(trocas) {
+  if (!trocas || !trocas.length) return '';
+  return 'O mercado trocou ' + trocas.map(function (t) { return t.deu + ' de ' + t.de + ' por ' + t.recebeu + ' de ' + t.para; }).join(' e ') + '.<br>';
+}
+
 function mostrarRelatorio(r) {
   var lista = r.itens.map(function (i) {
     return '<li><b>' + i.nome + '</b> <span class="tag">' + (i.nivel === 2 ? 'observado' : 'avistado') + '</span>' + (i.passaro ? ' <span class="tag">pelo pássaro</span>' : '') + '<br><small>' + i.detalhe + '</small><span class="valor">+' + i.valor + '</span></li>';
@@ -2644,7 +2763,7 @@ function mostrarRelatorio(r) {
   $('relEra').textContent = !era ? '' : r.eraNova === CONFIG.eras.length - 1 ? 'O reino chegou à Idade Imperial! Agora o exército de cerco pode atacar o Castelo de Pedra-Alta: veja o plano de batalha.' :
     'O reino entrou na ' + era.nome + '! ' + (era.libera ? 'Agora você tem ' + era.libera + '. ' : '') + 'Dá para fundar ' + (era.postos === 1 ? '1 posto avançado.' : era.postos + ' postos avançados.');
   $('relResumo').textContent = 'Relatado em ' + r.base + '. ' + r.celulas + ' trechos de terreno passados a tinta. Influência +' + r.ganho + ' (total ' + ESTADO.influencia + '). Ração da próxima expedição: ' + racaoMaxima() + ' porções.';
-  $('relEstoque').innerHTML = textoEstoque(ESTADO.reino.entregueHoje) + '<br>' + textoProximaEra();
+  $('relEstoque').innerHTML = textoEstoque(ESTADO.reino.entregueHoje) + '<br>' + textoMercado(r.trocas) + textoProximaEra();
   $('relatorio').classList.remove('oculto');
 }
 
@@ -2714,9 +2833,16 @@ function aplicarAjustes() {
     R.scene.traverse(function (o) { if (o.material) o.material.needsUpdate = true; });
   }
   $('fps').style.display = AJUSTES.mostrarFps || DEBUG ? 'block' : 'none';
-  AJUSTES.correrAos = clamp(AJUSTES.correrAos, CONFIG.zonaMorta + 10, 150);
+  aplicarMovimento();
+  AJUSTES.ondaForca = clamp(AJUSTES.ondaForca, 0, 3); AJUSTES.ondaLargura = clamp(AJUSTES.ondaLargura, 0.02, 0.4);   // anel do som (32_efeitos.js)
   $('stick').style.setProperty('--raio', AJUSTES.correrAos + 'px');
   aplicarDia();
+}
+// analógico (px) e velocidades a pé são independentes: os px só dizem onde a transição começa e acaba
+function aplicarMovimento() {
+  AJUSTES.zonaMorta = clamp(AJUSTES.zonaMorta, 2, 60); AJUSTES.correrAos = clamp(AJUSTES.correrAos, AJUSTES.zonaMorta + 10, 200);
+  AJUSTES.velCorrer = clamp(AJUSTES.velCorrer, 1, 20); AJUSTES.velAndar = clamp(AJUSTES.velAndar, 0.5, AJUSTES.velCorrer); AJUSTES.velLento = clamp(AJUSTES.velLento, 0.2, AJUSTES.velAndar);
+  CONFIG.zonaMorta = AJUSTES.zonaMorta; CONFIG.velLento = AJUSTES.velLento; CONFIG.velAndar = AJUSTES.velAndar; CONFIG.velCorrer = AJUSTES.velCorrer;
 }
 // o dia: entardecer antes da noite, noite antes do fim (mínimo 5 s entre cada um)
 function aplicarDia() {
@@ -2734,10 +2860,16 @@ function colarAjustes(txt) {
 function mmss(s) { s = Math.round(s); return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }
 function mostrarDia() {
   ['Dia', 'Tarde', 'Noite'].forEach(function (n) { var k = n.toLowerCase(); $('aj' + n).value = String(AJUSTES[k]); setTexto('aj' + n + 'Val', mmss(AJUSTES[k])); });
-  setTexto('ajCorrerVal', AJUSTES.correrAos + ' px');
+  Object.keys(ROTULOS_MOV).forEach(function (id) { $(id).value = String(AJUSTES[ROTULOS_MOV[id]]); setTexto(id + 'Val', rotuloMov(id, AJUSTES[ROTULOS_MOV[id]])); });
+}
+var ROTULOS_MOV = { ajZona: 'zonaMorta', ajCorrer: 'correrAos', ajLento: 'velLento', ajAndar: 'velAndar', ajCorrerVel: 'velCorrer', ajOndaForca: 'ondaForca', ajOndaLarg: 'ondaLargura' };
+function rotuloMov(id, v) {
+  if (id === 'ajOndaForca') return v.toFixed(1).replace('.', ',') + 'x';
+  if (id === 'ajOndaLarg') return v.toFixed(2).replace('.', ',');
+  return /^aj(Zona|Correr)$/.test(id) ? v + ' px' : v.toFixed(1).replace('.', ',') + ' /s';
 }
 function criarAjustes() {
-  var campos = { ajQualidade: 'pixelRatio', ajSombras: 'sombras', ajFps: 'fps', ajVolume: 'volume', ajMusica: 'musica', ajVibrar: 'vibrar', ajFpsVer: 'mostrarFps', ajDia: 'dia', ajTarde: 'tarde', ajNoite: 'noite', ajCorrer: 'correrAos' };
+  var campos = { ajQualidade: 'pixelRatio', ajSombras: 'sombras', ajFps: 'fps', ajVolume: 'volume', ajMusica: 'musica', ajVibrar: 'vibrar', ajFpsVer: 'mostrarFps', ajDia: 'dia', ajTarde: 'tarde', ajNoite: 'noite', ajZona: 'zonaMorta', ajCorrer: 'correrAos', ajLento: 'velLento', ajAndar: 'velAndar', ajCorrerVel: 'velCorrer', ajOndaForca: 'ondaForca', ajOndaLarg: 'ondaLargura' };
   function abrir() {
     Object.keys(campos).forEach(function (id) { var el = $(id), v = AJUSTES[campos[id]]; if (el.type === 'checkbox') el.checked = v; else el.value = String(v); });
     mostrarDia(); $('ajTexto').value = textoAjustes(); setTexto('ajCopiarMsg', '');
@@ -2751,7 +2883,7 @@ function criarAjustes() {
     });
     // sliders do dia mostram o tempo enquanto arrastam
     if (/^aj(Dia|Tarde|Noite)$/.test(id)) $(id).addEventListener('input', function () { setTexto(id + 'Val', mmss(parseFloat($(id).value))); });
-    if (id === 'ajCorrer') $(id).addEventListener('input', function () { setTexto('ajCorrerVal', $(id).value + ' px'); });
+    if (ROTULOS_MOV[id]) $(id).addEventListener('input', function () { setTexto(id + 'Val', rotuloMov(id, parseFloat($(id).value))); });
   });
   // copiar/colar: o Pedro manda os números que achou bons no celular; colar aplica os valores conhecidos e ignora o resto
   $('btnCopiarAjustes').addEventListener('click', function () {
