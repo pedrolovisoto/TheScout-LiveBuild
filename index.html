@@ -49,6 +49,8 @@
   .ajuste input[type=checkbox] { width: 22px; height: 22px; }
   .ajuste b { white-space: nowrap; }
   .ajGrupo { margin: 14px 0 0; font-size: 1em; }
+  .ajuste input:not([type]) { font: inherit; max-width: 55%; padding: 4px 6px; }
+  .mundoAtual { margin: 6px 0; } #menuAviso { color: #a33; } .mundosLista { list-style: none; padding: 0; } .mundosLista li { padding: 8px 0; border-bottom: 1px dashed rgba(0,0,0,.2); }
   .ajGrupo small { font-weight: normal; opacity: .7; }
   .bandidos { display: block; margin-top: 6px; padding: 6px 8px; border-left: 3px solid #c0392b; text-align: left; background: rgba(192,57,43,.07); }
   .ajCopiar { flex-direction: column; align-items: stretch; }
@@ -128,7 +130,10 @@
     <h1>The Scout</h1>
     <p>Você é o batedor do reino. Revele o mapa, anote o que encontrar e <b>volte para a base</b> antes do anoitecer. Só o que chega em casa vira mapa.</p>
     <p><small>Arraste em qualquer lugar para andar (arraste mais longe para correr, que faz barulho). Toque num ponto para ir até lá; toque duas vezes para correr. Parar no mato esconde você. Perto do cavalo, toque em Montar: ele é rápido e gasta menos ração, mas faz barulho, não entra na floresta e fica onde você o deixar. O que você relata vira trabalho para o reino: campos, bosques, pedreiras e minas enchem o estoque da cidade. Com influência e recursos o reino avança de era: a Feudal traz o cavalo, a dos Castelos traz o pássaro, e cada era deixa fundar postos avançados, que viram bases. Uma vez por expedição, o pássaro leva suas anotações para casa e libera o caderno. Em colinas, segure o botão para olhar longe. Fique parado perto de algo para observar os detalhes. A ração limita até onde você vai; o reino manda mais conforme cresce.</small></p>
+    <p class="mundoAtual">Mundo: <b id="menuMundo"></b></p>
+    <p id="menuAviso" class="falta oculto"></p>
     <button id="btnComecar" class="botao">Começar</button>
+    <button id="btnMundos" class="botao secundario">Mundos</button>
     <button id="btnAjustesMenu" class="botao secundario">Ajustes</button>
     <button id="btnApagarSave" class="botao perigo oculto">Apagar progresso</button>
   </div></div>
@@ -147,6 +152,7 @@
     <h2 id="vitTitulo">Pedra-Alta caiu!</h2>
     <p id="vitTexto"></p>
     <button id="btnVitoria" class="botao">Ver o relatório</button>
+    <button id="btnProximoMundo" class="botao secundario">Criar o próximo mundo</button>
   </div></div>
 
   <div id="perdido" class="tela oculto"><div class="cartao">
@@ -182,6 +188,23 @@
       <span class="ajBotoes"><button id="btnCopiarAjustes" class="botao mini">Copiar</button><button id="btnColarAjustes" class="botao mini">Aplicar</button><small id="ajCopiarMsg"></small></span></div>
     <p><small>Leve e 30 quadros esquentam menos o celular e gastam menos bateria.</small></p>
     <button id="btnFecharAjustes" class="botao">Voltar</button>
+  </div></div>
+
+  <div id="mundos" class="tela oculto"><div class="cartao">
+    <h2>Mundos</h2>
+    <ul id="mundosLista" class="mundosLista"></ul>
+    <h3 class="ajGrupo">Criar novo mundo <small>(cada um tem o próprio progresso)</small></h3>
+    <label class="ajuste">Nome <input id="mnNome" maxlength="30" placeholder="sorteado" autocomplete="off"></label>
+    <label class="ajuste">Semente <input id="mnSemente" inputmode="numeric" placeholder="aleatória" autocomplete="off"></label>
+    <label class="ajuste">Tamanho <select id="mn_tamanho"></select></label>
+    <label class="ajuste">Floresta <select id="mn_floresta"></select></label>
+    <label class="ajuste">Torres <select id="mn_torres"></select></label>
+    <label class="ajuste">Acampamentos <select id="mn_acampamentos"></select></label>
+    <label class="ajuste">Rio <select id="mn_rio"></select></label>
+    <p><small>Todo mundo tem base, rio com ponte e vau (se tiver rio), mirantes, postos, dois locais de cada recurso, bandidos, uma fortaleza rival e o castelo final. A mesma semente com as mesmas opções dá sempre o mesmo mundo.</small></p>
+    <button id="btnCriarMundo" class="botao">CRIAR NOVO MUNDO</button>
+    <p id="mnMsg"></p>
+    <button id="btnFecharMundos" class="botao secundario">Voltar</button>
   </div></div>
 
   <div id="caderno" class="tela oculto"><div class="cartao">
@@ -332,9 +355,11 @@ AJUSTES_PADRAO.musica = 0.7;   // volume da música (0 a 1, multiplica o Volume)
 var AJUSTES = Object.assign({}, AJUSTES_PADRAO);
 
 // ===== 05_util.js
-// ---- rng com seed (mulberry32)
-var RNG = (function () {
-  var s = 1;
+// ---- rng com seed (mulberry32). RNG é o global do jogo; criarRNG(seed) dá um próprio (o gerador de mundos usa um só dele,
+// então a ordem das outras chamadas não muda o mundo)
+var RNG = criarRNG(1);
+function criarRNG(semente) {
+  var s = (semente >>> 0) || 1;
   return {
     seed: function (n) { s = (n >>> 0) || 1; },
     next: function () {
@@ -344,8 +369,10 @@ var RNG = (function () {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     },
     range: function (a, b) { return a + (b - a) * this.next(); },
+    int: function (a, b) { return a + Math.floor((b - a + 1) * this.next()); },   // inteiro de a a b
+    item: function (lista) { return lista[Math.floor(lista.length * this.next())]; },
   };
-})();
+}
 
 // ---- eventos
 var EVENTOS = {};
@@ -474,13 +501,14 @@ function gerarMapa(seed) {
   for (var j = 0; j < A; j++) for (var i = 0; i < L; i++) {
     var x = (i + 0.5) * c, z = (j + 0.5) * c;
     var n = r1(x / 22, z / 22) * 0.7 + r2(x / 9, z / 9) * 0.3, t = T.CAMPO;
-    if (n > 0.62) t = T.FLORESTA; else if (n > 0.5) t = T.MATO;
-    // rio sinuoso e lago
-    if (aguaContinua(x, z)) t = (Math.abs(x - 33) < 3.5 && dist2(x, z, 144, 42) >= 169) ? T.VAU : T.AGUA;
+    if (n > AGUA.limFloresta) t = T.FLORESTA; else if (n > AGUA.limMato) t = T.MATO;
+    // rio sinuoso e lago; o vau é o trecho raso do rio (lago não tem vau)
+    if (aguaContinua(x, z)) t = !noLago(x, z) && AGUA.vaus.some(function (v) { return Math.abs(x - v.x) < v.larg; }) ? T.VAU : T.AGUA;
     grade[j * L + i] = t;
   }
-  function pinta(x, z, r, t, soSe) {
-    for (var j = 0; j < A; j++) for (var i = 0; i < L; i++) {
+  function pinta(x, z, r, t, soSe) {   // só as células que o círculo pode tocar
+    var j1 = Math.min(A - 1, Math.floor((z + r) / c)), i1 = Math.min(L - 1, Math.floor((x + r) / c));
+    for (var j = Math.max(0, Math.floor((z - r) / c)); j <= j1; j++) for (var i = Math.max(0, Math.floor((x - r) / c)); i <= i1; i++) {
       var cx = (i + 0.5) * c, cz = (j + 0.5) * c, k = j * L + i;
       if (dist2(cx, cz, x, z) < r * r && (!soSe || soSe(grade[k]))) grade[k] = t;
     }
@@ -503,17 +531,24 @@ function gerarMapa(seed) {
   return grade;
 }
 
-// rio sinuoso e lago como formas contínuas (a grade e o relevo fino usam as duas)
-function aguaContinua(x, z) { return Math.abs(z - (120 + 6 * Math.sin(x / 21))) < 3 || dist2(x, z, 144, 42) < 169; }
+// rio sinuoso e lago como formas contínuas (a grade e o relevo fino usam as duas). Dados do mundo: o Primeiro mundo usa estes,
+// um mundo gerado troca (12_mundo.js). Rio: z do meio, amplitude, período e fase da curva, meia largura; limites do ruído da vegetação
+var AGUA = { rio: { z: 120, amp: 6, per: 21, fase: 0, larg: 3 }, lagos: [{ x: 144, z: 42, r: 13 }], vaus: [{ x: 33, larg: 3.5 }], limFloresta: 0.62, limMato: 0.5 };
+function rioZ(x) { var r = AGUA.rio; return r.z + r.amp * Math.sin(x / r.per + r.fase); }
+function noLago(x, z) { return AGUA.lagos.some(function (l) { return dist2(x, z, l.x, l.z) < l.r * l.r; }); }
+function aguaContinua(x, z) { return (!!AGUA.rio && Math.abs(z - rioZ(x)) < AGUA.rio.larg) || noLago(x, z); }
 
 // relevo num ponto qualquer: nível do platô (borda com ruído), rampa que passa ali (-1 = nenhuma) e água
 function relevoPonto(x, z, tipo, rb) {
   if (tipo === T.VAU) return { nivel: 0, rampa: -1 };
   if (tipo === T.AGUA) return aguaContinua(x, z) ? { nivel: -1, rampa: -1 } : { nivel: 0, rampa: -1 };
-  var nivel = 0, rampa = -1;
+  var nivel = 0, rampa = -1, ruido = -1;
   for (var n = 0; n < PLATOS.length; n++) {
-    var p = PLATOS[n], borda = p.r * (0.82 + 0.36 * rb(x / 7, z / 7));
-    if (p.nivel > nivel && dist2(x, z, p.x, p.z) < borda * borda) nivel = p.nivel;
+    var p = PLATOS[n], d2 = dist2(x, z, p.x, p.z);
+    var bmax = p.r * 1.18; if (p.nivel <= nivel || d2 >= bmax * bmax) continue;   // longe até da borda mais larga
+    if (ruido < 0) ruido = rb(x / 7, z / 7);
+    var borda = p.r * (0.82 + 0.36 * ruido);
+    if (d2 < borda * borda) nivel = p.nivel;
   }
   for (var m = 0; m < RAMPAS.length; m++) {
     var r = RAMPAS[m], t = ((x - r.a[0]) * r.dx + (z - r.a[1]) * r.dz) / r.len2;
@@ -550,6 +585,279 @@ function gerarRelevo(seed, grade) {
 function alturaRampa(r, x, z) {
   var t = clamp(((x - r.a[0]) * r.dx + (z - r.a[1]) * r.dz) / r.len2, 0, 1);
   return lerp(r.ha, r.hb, t);
+}
+
+// ===== 12_mundo.js
+// ---- mundos: o Primeiro mundo é o mapa feito à mão (10_conteudo.js); os outros saem de montarMundo(seed, opcoes) e trocam
+// as mesmas tabelas globais (DESCOBERTAS, OLHEIROS, PLATOS...), então sim, render, som, tutorial e guerra funcionam igual em todos.
+// Papéis fixos: 'castelo' é o castelo final (fecha o mapa) e 'fortaleza' o rival opcional; o resto dos ids vem do gerador.
+var MUNDO = { id: 'primeiro', nome: 'Primeiro mundo', seed: 7, gerado: false };
+var GERADOR_VERSAO = 1;   // mudou o gerador: mundos salvos com outra versão sairiam diferentes (o save só confere o tamanho)
+// escolhas do CRIAR NOVO MUNDO (a primeira de cada é o padrão): células, limites do ruído (floresta, mato), torres soltas, acampamentos
+var OPCOES_MUNDO = {
+  tamanho: { normal: [90, 135], pequeno: [80, 120], grande: [108, 162] },
+  floresta: { normal: [0.62, 0.5], pouca: [0.7, 0.57], muita: [0.55, 0.44] },
+  torres: { normal: 1, poucas: 0, muitas: 3 },   // além da torre da ponte e das torres dos dois castelos
+  acampamentos: { normal: 3, poucos: 2, muitos: 4 },
+  rio: { sim: true, nao: false },
+};
+function opcoesPadrao() { var o = {}; Object.keys(OPCOES_MUNDO).forEach(function (k) { o[k] = Object.keys(OPCOES_MUNDO[k])[0]; }); return o; }
+
+// o Primeiro mundo guardado como mundo, para voltar a ele se um gerado falhar na mesma página
+var MUNDO_PRIMEIRO = { L: CONFIG.mapaL, A: CONFIG.mapaA, base: CONFIG.base, cavalo: CONFIG.cavalo, descobertas: DESCOBERTAS, olheiros: OLHEIROS,
+  postos: LOCAIS_POSTO, mirantes: MIRANTES, platos: PLATOS, rampas: RAMPAS, estradas: ESTRADAS, agua: AGUA,
+  alvos: { fortaleza: { portao: [49, 60], torres: ['torre4'], patrulha: 'p2' }, castelo: { portao: [90, 51], torres: ['torre1', 'torre3'], patrulha: 'p1' } } };
+
+function aplicarMundo(m) {
+  CONFIG.mapaL = m.L; CONFIG.mapaA = m.A; CONFIG.base = m.base; CONFIG.cavalo = m.cavalo;
+  DESCOBERTAS = m.descobertas; OLHEIROS = m.olheiros; LOCAIS_POSTO = m.postos; MIRANTES = m.mirantes;
+  PLATOS = m.platos; RAMPAS = m.rampas; ESTRADAS = m.estradas; AGUA = m.agua;
+  Object.keys(m.alvos).forEach(function (id) { Object.assign(CONFIG.guerra.alvos[id], m.alvos[id]); });
+}
+
+// ---- nomes
+var NOMES_MUNDO = {
+  raiz: [['Pedra', 1], ['Corvo', 0], ['Lobo', 0], ['Ferro', 0], ['Vento', 0], ['Freixo', 0], ['Urso', 0], ['Falcão', 0], ['Cardo', 0], ['Monte', 0],
+         ['Rocha', 1], ['Serra', 1], ['Brasa', 1], ['Bruma', 1], ['Garça', 1], ['Penha', 1], ['Lua', 1], ['Águia', 1]],   // 1 = feminino
+  fim: [['Alto', 'Alta'], ['Negro', 'Negra'], ['Velho', 'Velha'], ['Branco', 'Branca'], ['Frio', 'Fria'], ['Fundo', 'Funda'], ['Torto', 'Torta'], ['Rubro', 'Rubra'], ['Pardo', 'Parda'], ['Bravo', 'Brava']],
+  vila: ['Ribeira', 'Moinho', 'Várzea', 'Pinhal', 'Fontela', 'Outeiro', 'Lameiro', 'Carvalhal', 'Sobreiro', 'Azenha'],
+  lugar: ['do Rio', 'do Penhasco', 'da Várzea', 'do Vale', 'da Colina', 'da Encosta', 'do Ermo', 'da Charneca', 'do Barranco', 'da Lagoa', 'do Outeiro', 'da Serra'],
+  tipo: { campo: ['Campo fértil', 'Trigal', 'Lavoura'], bosque: ['Bosque', 'Mata', 'Carvalhal'], pedreira: ['Pedreira', 'Lajedo'],
+          mina: ['Veio de ouro', 'Mina de ouro'], acampamento: ['Acampamento', 'Covil', 'Esconderijo'] },
+  detalhe: { campo: ['Terra boa para trigo', 'Trigal grande e bem regado', 'Terra preta, boa de plantar'],
+             bosque: ['Madeira boa e fácil de tirar', 'Carvalhos velhos e retos', 'Pinheiros altos perto da trilha'],
+             pedreira: ['Pedra solta, fácil de cortar', 'Granito bom para muralha', 'Laje firme na encosta'],
+             mina: ['Ouro na encosta, sem guarda', 'Ouro rico, mas longe de tudo', 'Veio fino e brilhante'],
+             vila: ['Amigável, planta trigo, aceita comércio', 'Amigável, moinho no riacho', 'Pastores, aceitam comércio'],
+             torre: ['Um vigia, sino de alarme', 'Dois vigias, olham a estrada', 'Arqueiros no alto'],
+             ruina: ['Relíquia no altar (rara)', 'Inscrições de um reino antigo', 'Cripta selada sob o altar'] },
+};
+function nomeComposto(rng) { var r = rng.item(NOMES_MUNDO.raiz); return r[0] + '-' + rng.item(NOMES_MUNDO.fim)[r[1]]; }
+function nomeDeMundo(seed) { return 'Terras de ' + nomeComposto(criarRNG(seed * 31 + 5)); }
+// valor de um local no relatório: [avistar, observar]
+var VALOR_LOCAL = { campo: [1, 2], bosque: [1, 2], pedreira: [1, 3], mina: [2, 6], vila: [1, 3], acampamento: [1, 4], torre: [1, 3], ruina: [3, 10] };
+
+function distSeg(x, z, a, b) {
+  var dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz, t = l2 ? clamp(((x - a[0]) * dx + (z - a[1]) * dz) / l2, 0, 1) : 0;
+  return Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t);
+}
+
+// ---- gerador: mesma receita do Primeiro mundo (base no alto ao sul, rio no meio com ponte e vau, castelo final ao norte com
+// portão, torre, cão e patrulha; fortaleza rival de um lado; mirantes, postos, 2 locais de cada recurso). Devolve null se não coube;
+// quem garante que dá para jogar é validarMundo().
+function montarMundo(seed, op) {
+  op = Object.assign(opcoesPadrao(), op || {});
+  var rng = criarRNG(seed * 7919 + 13), tam = OPCOES_MUNDO.tamanho[op.tamanho] || OPCOES_MUNDO.tamanho.normal, fl = OPCOES_MUNDO.floresta[op.floresta] || OPCOES_MUNDO.floresta.normal;
+  var L = tam[0], A = tam[1], W = L * CONFIG.celula, H = A * CONFIG.celula, esc = A / 135, temRio = OPCOES_MUNDO.rio[op.rio] !== false;
+  var desc = [], olh = [], postos = [], mirantes = [], platos = [], rampas = [], estradas = [], ocup = [], usados = {};
+  var agua = { rio: temRio ? { z: H * rng.range(0.42, 0.47), amp: rng.range(4, 7), per: rng.range(17, 25), fase: rng.range(0, 6.28), larg: 3 } : null,
+               lagos: [], vaus: [], limFloresta: fl[0], limMato: fl[1] };
+  var zr = temRio ? agua.rio.z : H * 0.45;
+  function rz(x) { var r = agua.rio; return r ? r.z + r.amp * Math.sin(x / r.per + r.fase) : zr; }
+  // cabe um círculo de raio r em (x, z)? longe da borda, da água, do que já foi posto e (folga) das estradas
+  function livre(x, z, r, folga) {
+    if (x < r + 4 || x > W - r - 4 || z < r + 4 || z > H - r - 4) return false;
+    if (agua.rio) for (var k = -1; k <= 1; k++) if (Math.abs(z - rz(x + k * r)) < agua.rio.larg + r + 2) return false;
+    if (agua.lagos.some(function (l) { return dist2(x, z, l.x, l.z) < (l.r + r + 2) * (l.r + r + 2); })) return false;
+    if (ocup.some(function (o) { return dist2(x, z, o.x, o.z) < (o.r + r) * (o.r + r); })) return false;
+    var f = folga === undefined ? 3 : folga;
+    return !estradas.some(function (lin) { for (var s = 0; s + 1 < lin.length; s++) if (distSeg(x, z, lin[s], lin[s + 1]) < f) return true; return false; });
+  }
+  // sorteia um ponto livre na zona (x0..x1, z0..z1, em frações do mapa) que passe no filtro
+  function colocar(r, x0, x1, z0, z1, filtro, folga) {
+    for (var n = 0; n < 250; n++) {
+      var x = W * rng.range(x0, x1), z = H * rng.range(z0, z1);
+      if ((!filtro || filtro(x, z)) && livre(x, z, r, folga)) return [Math.round(x * 2) / 2, Math.round(z * 2) / 2];
+    }
+    return null;
+  }
+  function unico(f) { for (var n = 0; n < 20; n++) { var s = f(); if (!usados[s]) { usados[s] = 1; return s; } } var k = 2; while (usados[s + ' ' + k]) k++; usados[s + ' ' + k] = 1; return s + ' ' + k; }
+  function local(tipo, x, z, nome, detalhe, extra) {
+    var v = VALOR_LOCAL[tipo] || [3, 8], d = Object.assign({ id: tipo + (desc.filter(function (q) { return q.tipo === tipo; }).length + 1), tipo: tipo, nome: nome, x: x, z: z, avistar: v[0], observar: v[1], detalhe: detalhe }, extra || {});
+    desc.push(d); return d;
+  }
+  var nTorre = 0;
+  function torre(x, z, nome) {
+    nTorre++; ocup.push({ x: x, z: z, r: 5 });
+    olh.push({ id: 't' + nTorre, tipo: 'torre', x: x, z: z, ang: rng.range(0, 6.28) });
+    return local('torre', x, z, nome, rng.item(NOMES_MUNDO.detalhe.torre), { id: 'torre' + nTorre }).id;
+  }
+
+  // base no alto, ao sul, com a rampa descendo para o norte pela estrada (como no Primeiro mundo)
+  var bx = Math.round(W * rng.range(0.35, 0.65)), bz = H - 12;
+  var base = { x: bx, z: bz, raio: 9 }, cavalo = { x: bx + 5, z: bz - 6 };
+  platos.push({ x: bx, z: bz, r: 21.2, nivel: 1 }); rampas.push({ a: [bx, bz - 35], b: [bx, bz - 20], w: 2.6, de: 0, para: 1 });
+  ocup.push({ x: bx, z: bz - 4, r: 30 }, { x: bx, z: bz - 38, r: 6 });
+
+  // castelo final ao norte: platô de dois degraus, portão ao sul, torre de um lado e cão do outro (medidas do Pedra-Alta)
+  var lado = rng.next() < 0.5 ? -1 : 1, cx = Math.round(W * (0.5 + lado * rng.range(0.03, 0.18))), cz = Math.max(36, Math.round(H * rng.range(0.14, 0.17))), sT = rng.next() < 0.5 ? -1 : 1;
+  var nomeCastelo = nomeComposto(rng), nomeRival = nomeComposto(rng); while (nomeRival.split('-')[0] === nomeCastelo.split('-')[0]) nomeRival = nomeComposto(rng);
+  usados[nomeCastelo] = usados[nomeRival] = 1;
+  platos.push({ x: cx, z: cz, r: 28.8, nivel: 1 }, { x: cx, z: cz, r: 13.8, nivel: 2 });
+  rampas.push({ a: [cx, cz + 37.5], b: [cx, cz + 20], w: 2.6, de: 0, para: 1 }, { a: [cx, cz + 17.5], b: [cx, cz + 7.5], w: 2.2, de: 1, para: 2 });
+  ocup.push({ x: cx, z: cz, r: 34 }, { x: cx, z: cz + 41, r: 5 });
+  desc.push({ id: 'castelo', tipo: 'castelo', nome: 'Castelo de ' + nomeCastelo, x: cx, z: cz + 2.5, avistar: 3, observar: 9, detalhe: 'Guarnição grande, muralha de pedra' });
+  olh.push({ id: 'c0', tipo: 'cao', x: cx - sT * 7.5, z: cz + 7.5, castelo: 'castelo' });
+
+  // fortaleza rival do outro lado, portão virado para o meio do mapa, ronda em volta (medidas do Corvo-Negro)
+  var gx = lado, F = colocar(22, gx > 0 ? 0.05 : 0.6, gx > 0 ? 0.4 : 0.95, 0.1, 0.4, function (x, z) { return z < rz(x) - 26; });
+  if (!F) return null;
+  var fx = F[0], fz = F[1];
+  platos.push({ x: fx, z: fz, r: 11, nivel: 1 }); rampas.push({ a: [fx + 18 * gx, fz + 10], b: [fx + 9 * gx, fz + 5], w: 2, de: 0, para: 1 });
+  ocup.push({ x: fx, z: fz, r: 24 });
+  desc.push({ id: 'fortaleza', tipo: 'castelo', nome: 'Fortaleza de ' + nomeRival, x: fx, z: fz, avistar: 3, observar: 8, detalhe: 'Reino rival menor, um portão ao ' + (gx > 0 ? 'leste' : 'oeste') });
+  olh.push({ id: 'p2', tipo: 'patrulha', rota: [[fx + 20 * gx, fz + 14], [fx - 12 * gx, fz + 20], [fx - 20 * gx, fz + 4]], castelo: 'fortaleza' });
+
+  // estrada principal: desce da base, cruza o rio na ponte e sobe a rampa do castelo; a ponte tem torre e patrulha
+  var xm = clamp(Math.round(lerp(bx, cx, 0.5) + rng.range(-25, 25)), 30, W - 30), zm = rz(xm), sP = gx;   // o cruzamento e a ronda vão para o lado oposto ao da fortaleza
+  estradas.push([[bx, bz], [bx, bz - 45], [xm, zm + 16], [xm, zm - 16], [cx, cz + 44], [cx, cz + 6]]);
+  var tPonte = torre(xm + (rng.next() < 0.5 ? -9 : 9), Math.round(zm + 32), temRio ? 'Torre da Ponte' : 'Torre da Estrada');
+  var tCastelo = torre(cx + sT * 12.5, cz + 15, 'Torre de ' + nomeCastelo);
+  var tRival = torre(fx + 6 * gx, fz - 4, 'Torre de ' + nomeRival);
+  olh.push({ id: 'p1', tipo: 'patrulha', rota: [[xm - 1, Math.round(zm + 21)], [xm - 1, Math.round(zm - 21)], [xm + sP * 45, Math.round(zm - 30)]], castelo: 'castelo' });
+  ocup.push({ x: xm + sP * 45, z: zm - 30, r: 4 });
+
+  // postos: um ao sul longe da base (com estrada), um no cruzamento ao norte do rio (estrada que segue até uma torre) e um no alto do outro lado
+  var pSul = colocar(5, 0.08, 0.92, 0.5, 0.85, function (x, z) { return z > rz(x) + 25 && dist2(x, z, bx, bz) > 55 * 55; });
+  if (!pSul) return null;
+  postos.push({ id: 'posto1', nome: 'Posto ' + unico(function () { return rng.item(NOMES_MUNDO.lugar); }), x: pSul[0], z: pSul[1] });
+  estradas.push([[bx, bz - 45], pSul]);
+  ocup.push({ x: pSul[0], z: pSul[1], r: 6 });
+  // o cruzamento sai da estrada entre a ponte e o castelo, no primeiro ponto em que o posto cabe
+  for (var t = 0.5, cruz = null; t > 0.05 && !cruz; t -= 0.1) for (var f = 0.5; f >= 0.2 && !cruz; f -= 0.1) {
+    var px = lerp(xm, cx, t), pz = lerp(zm - 16, cz + 44, t), ex = clamp(px + sP * 55, 14, W - 14), q = [Math.round(lerp(px, ex, f)), Math.round(pz)];
+    if (livre(q[0], q[1], 5)) cruz = q;
+  }
+  if (!cruz) return null;
+  postos.push({ id: 'posto2', nome: 'Posto do Cruzamento', x: cruz[0], z: cruz[1] });
+  ocup.push({ x: cruz[0], z: cruz[1], r: 6 });
+  estradas.push([[Math.round(px), Math.round(pz)], [Math.round(ex), Math.round(pz)]]);
+  var nTorres = OPCOES_MUNDO.torres[op.torres] !== undefined ? OPCOES_MUNDO.torres[op.torres] : 1;
+  if (nTorres > 0 && livre(ex, pz, 5)) { torre(Math.round(ex), Math.round(pz + 3), 'Torre do ' + (sP > 0 ? 'Leste' : 'Oeste')); nTorres--; }
+  var pAlto = colocar(5, sP > 0 ? 0.06 : 0.6, sP > 0 ? 0.4 : 0.94, 0.15, 0.42, function (x, z) { return z < rz(x) - 20; });
+  if (!pAlto) return null;
+  postos.push({ id: 'posto3', nome: 'Posto do Alto ' + (sP > 0 ? 'Oeste' : 'Leste'), x: pAlto[0], z: pAlto[1] });
+  ocup.push({ x: pAlto[0], z: pAlto[1], r: 6 });
+
+  // mirantes: platô com um degrau a mais no alto e duas rampas, um em cada canto do mapa
+  var nMir = esc < 0.95 ? 3 : esc > 1.1 ? 5 : 4, zonas = [[0.05, 0.5, 0.55, 0.92], [0.5, 0.95, 0.55, 0.92], [0.05, 0.5, 0.08, 0.45], [0.5, 0.95, 0.08, 0.45], [0.2, 0.8, 0.3, 0.7]];
+  for (var n = 0; n < nMir; n++) {
+    var zn = zonas[n], feito = false;
+    for (var tm = 0; tm < 6 && !feito; tm++) {
+      var Q = colocar(18, zn[0], zn[1], zn[2], zn[3], null, 19) || colocar(18, 0, 1, 0, 1, null, 19);   // sem lugar no canto: qualquer lugar
+      if (!Q) return null;
+      var au = rng.range(0, 6.28), ux = Math.sin(au), uz = Math.cos(au), av = au + Math.PI + rng.range(-0.8, 0.8), vx = Math.sin(av), vz = Math.cos(av);
+      var a0 = [Math.round((Q[0] + vx * 24) * 2) / 2, Math.round((Q[1] + vz * 24) * 2) / 2];
+      if (!livre(a0[0], a0[1], 3)) continue;   // a boca da rampa caiu em lugar ruim: sorteia outro ponto
+      var M = [Math.round((Q[0] + ux * 7.9) * 2) / 2, Math.round((Q[1] + uz * 7.9) * 2) / 2];
+      platos.push({ x: Q[0], z: Q[1], r: 13.8, nivel: 1 }, { x: M[0], z: M[1], r: 6.2, nivel: 2 });
+      rampas.push({ a: a0, b: [Q[0] + vx * 12.5, Q[1] + vz * 12.5], w: 2.2, de: 0, para: 1 },
+                  { a: [M[0] - ux * 13, M[1] - uz * 13], b: [M[0] - ux * 5.6, M[1] - uz * 5.6], w: 1.6, de: 1, para: 2 });
+      mirantes.push([M[0], M[1], 5]);
+      ocup.push({ x: Q[0], z: Q[1], r: 18 }, { x: a0[0], z: a0[1], r: 4 });
+      feito = true;
+    }
+    if (!feito) return null;
+  }
+
+  // lago ao norte (nem todo mundo tem) e vaus no rio, longe da ponte
+  if (rng.next() < 0.7) {
+    var rl = Math.round(rng.range(10, 13)), lg = colocar(rl + 4, 0.08, 0.92, 0.04, 0.4, function (x, z) { return z < rz(x) - rl - 10; }, rl + 5);
+    if (lg) agua.lagos.push({ x: lg[0], z: lg[1], r: rl });
+  }
+  if (temRio) for (var v = 0, nv = rng.int(1, 2), tent = 0; v < nv && tent < 50; tent++) {
+    var vxp = Math.round(rng.range(15, W - 15));
+    if (Math.abs(vxp - xm) < 30 || agua.vaus.some(function (q) { return Math.abs(q.x - vxp) < 30; })) continue;
+    agua.vaus.push({ x: vxp, larg: 3.5 }); v++;
+  }
+
+  // torres soltas que sobraram, longe da base
+  for (var tt = 0; tt < nTorres; tt++) {
+    var pt = colocar(5, 0.05, 0.95, 0.05, 0.8, function (x, z) { return dist2(x, z, bx, bz) > 60 * 60; });
+    if (pt) torre(pt[0], pt[1], 'Torre ' + unico(function () { return rng.item(NOMES_MUNDO.lugar); }));
+  }
+
+  // locais: 2 de cada recurso (um perto, um longe), 2 vilas, acampamentos espalhados e a ruína no fundo do norte
+  var sul = function (x, z) { return z > rz(x) + 14; }, norte = function (x, z) { return z < rz(x) - 14; };
+  var margem = function (x, z) { return z > rz(x) + 10 && z < rz(x) + 40; };
+  var sitios = [['campo', sul], ['campo', sul], ['bosque', sul], ['bosque', margem], ['pedreira', sul], ['pedreira', norte],
+                ['mina', sul], ['mina', norte], ['vila', sul], ['vila', norte], ['ruina', function (x, z) { return z < H * 0.25; }]];
+  var nAc = OPCOES_MUNDO.acampamentos[op.acampamentos] || 3;
+  for (var k = 0; k < nAc; k++) sitios.push(['acampamento', k % 2 ? norte : sul]);
+  var recurso = { campo: 'comida', bosque: 'madeira', pedreira: 'pedra', mina: 'ouro' };
+  for (var s = 0; s < sitios.length; s++) {
+    var cs, tipo = sitios[s][0], p = colocar(8, 0.04, 0.96, 0.04, 0.96, sitios[s][1]);
+    if (!p) return null;
+    ocup.push({ x: p[0], z: p[1], r: 8 });
+    var nome = tipo === 'vila' ? 'Vila ' + unico(function () { var v2 = rng.item(NOMES_MUNDO.vila); return (/^(Ribeira|Várzea|Fontela|Azenha)$/.test(v2) ? 'da ' : 'do ') + v2; }) :
+      tipo === 'ruina' ? unico(function () { return rng.item(['Ruína de um templo antigo', 'Ruína do mosteiro', 'Ruína da torre velha']); }) :
+      unico(function () { return rng.item(NOMES_MUNDO.tipo[tipo]) + ' ' + rng.item(NOMES_MUNDO.lugar); });
+    var det = tipo === 'acampamento' ? rng.int(6, 15) + ' homens, ' + (cs = rng.int(0, 2), cs ? cs + (cs === 1 ? ' cão' : ' cães') : 'sem cães') + ', sem cavalos' : rng.item(NOMES_MUNDO.detalhe[tipo]);
+    var d = local(tipo, p[0], p[1], nome, det, recurso[tipo] ? { recurso: recurso[tipo] } : null);
+    if (tipo === 'acampamento' && d.id !== 'acampamento2') olh.push({ id: 'c' + d.id.slice(-1), tipo: 'cao', x: p[0], z: p[1] });   // cão vigia o 1º e o 3º
+  }
+  return { L: L, A: A, base: base, cavalo: cavalo, descobertas: desc, olheiros: olh, postos: postos, mirantes: mirantes, platos: platos, rampas: rampas,
+           estradas: estradas, agua: agua,
+           alvos: { fortaleza: { portao: [fx + 7 * gx, fz + 4], torres: [tRival], patrulha: 'p2' }, castelo: { portao: [cx, cz + 9], torres: [tPonte, tCastelo], patrulha: 'p1' } } };
+}
+
+// ---- validação: dá para jogar? (mesma regra do caminho(): penhasco, água e, a cavalo, floresta bloqueiam)
+// células aonde se chega de (x, z)
+function alcance(x, z, cav) {
+  var L = CONFIG.mapaL, A = CONFIG.mapaA, ini = celulaDe(x, z), foi = new Uint8Array(L * A), fila = [ini];
+  if (ini < 0) return foi;
+  foi[ini] = 1;
+  for (var q = 0; q < fila.length; q++) {
+    var k = fila[q], i = k % L, j = (k - i) / L;
+    for (var di = -1; di <= 1; di++) for (var dj = -1; dj <= 1; dj++) {
+      if (!di && !dj) continue;
+      var ni = i + di, nj = j + dj; if (ni < 0 || nj < 0 || ni >= L || nj >= A) continue;
+      var n = nj * L + ni; if (foi[n]) continue;
+      if (di && dj) { var s1 = j * L + ni, s2 = nj * L + i; if (!(ligadas(k, s1, cav) && ligadas(s1, n, cav) && ligadas(k, s2, cav) && ligadas(s2, n, cav))) continue; }
+      else if (!ligadas(k, n, cav)) continue;
+      foi[n] = 1; fila.push(n);
+    }
+  }
+  return foi;
+}
+function chegaPerto(foi, x, z, r) {
+  var c = CONFIG.celula, L = CONFIG.mapaL;
+  for (var j = Math.max(0, Math.floor((z - r) / c)); j <= Math.min(CONFIG.mapaA - 1, Math.floor((z + r) / c)); j++)
+    for (var i = Math.max(0, Math.floor((x - r) / c)); i <= Math.min(L - 1, Math.floor((x + r) / c)); i++)
+      if (foi[j * L + i] && dist2((i + 0.5) * c, (j + 0.5) * c, x, z) < r * r) return true;
+  return false;
+}
+// lista do que falha no mundo carregado em ESTADO (vazia = jogável): todo local dá para observar a pé, todo posto dá para fundar,
+// todo mirante sobe até o alto, os dois portões têm caminho a pé da base e o cavalo chega ao portão do castelo final
+function validarMundo() {
+  var b = CONFIG.base, pe = alcance(b.x, b.z - 2, false), cav = alcance(CONFIG.cavalo.x, CONFIG.cavalo.z, true), falhas = [];
+  DESCOBERTAS.forEach(function (d) {
+    if (!chegaPerto(pe, d.x, d.z, CONFIG.raioObservar - 1.5)) falhas.push('local ' + d.id);
+    var h = alturaEm(d.x, d.z);   // o modelo fica no chão plano, não na beira de um penhasco
+    if ([[1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5]].some(function (o) { return Math.abs(alturaEm(d.x + o[0], d.z + o[1]) - h) > 0.5; })) falhas.push('penhasco em ' + d.id);
+  });
+  LOCAIS_POSTO.forEach(function (p) { if (!chegaPerto(pe, p.x, p.z, CONFIG.raioFundar - 0.8)) falhas.push('posto ' + p.id); });
+  MIRANTES.forEach(function (mi, n) {
+    var k = celulaDe(mi[0], mi[1]);
+    if (!pe[k] || ESTADO.grade[k] !== T.COLINA || alturaEm(mi[0], mi[1]) < 2 * CONFIG.alturaNivel - 0.1) falhas.push('mirante ' + n);
+  });
+  Object.keys(CONFIG.guerra.alvos).forEach(function (id) { if (!rotaPortao(id, false)) falhas.push('portão ' + id); });
+  var pc = CONFIG.guerra.alvos.castelo.portao;
+  if (!chegaPerto(cav, pc[0], pc[1], 3)) falhas.push('cavalo até o portão');
+  CONFIG.reino.recursos.forEach(function (r) { if (!DESCOBERTAS.some(function (d) { return d.recurso === r; })) falhas.push('sem ' + r); });
+  return falhas;
+}
+// gera e valida a partir de uma semente; a que não serve pula para a próxima. Deixa o mundo aplicado e o ESTADO dele pronto.
+// Devolve a semente que deu certo, ou null (aí volta ao Primeiro mundo: nunca entrega mundo incompleto)
+function gerarMundoValido(seed, op, tentativas) {
+  for (var n = 0; n < (tentativas || 40); n++) {
+    var s = (seed + n * 101) >>> 0, m = montarMundo(s, op);
+    if (!m) continue;
+    aplicarMundo(m); ESTADO = novoEstado(s);
+    if (!validarMundo().length) return s;
+  }
+  aplicarMundo(MUNDO_PRIMEIRO); ESTADO = null;
+  return null;
 }
 
 // ===== 20_sim.js
@@ -608,11 +916,16 @@ function celulaLivre(k, aCavalo, soMapa) { var t = ESTADO.grade[k]; return TERRE
 function ligadas(a, b, cav, soMapa) {
   if (!celulaLivre(b, cav, soMapa)) return false;
   var L = CONFIG.mapaL, c = CONFIG.celula, ai = a % L, aj = (a - ai) / L, bi = b % L, bj = (b - bi) / L;
-  var x0 = (ai + 0.5) * c, z0 = (aj + 0.5) * c, n = CONFIG.relevoFino, px = x0, pz = z0;
-  for (var s = 1; s <= n; s++) {
-    var x = x0 + (bi - ai) * c * s / n, z = z0 + (bj - aj) * c * s / n;
-    if (Math.abs(alturaEm(x, z) - alturaEm(px, pz)) > CONFIG.degrauMax) return false;
-    px = x; pz = z;
+  // o centro da célula cai na quina de quatro amostras finas: confere uma linha deslocada para cada lado (quem anda pela divisa
+  // e escorrega 1e-13 para o lado do platô não fica preso num passo que o caminho achou livre)
+  var x0 = (ai + 0.5) * c, z0 = (aj + 0.5) * c, n = CONFIG.relevoFino;
+  for (var q = 0; q < 4; q++) {
+    var ox = q & 1 ? 0.05 : -0.05, oz = q & 2 ? 0.05 : -0.05, px = x0 + ox, pz = z0 + oz;
+    for (var s = 1; s <= n; s++) {
+      var x = x0 + (bi - ai) * c * s / n + ox, z = z0 + (bj - aj) * c * s / n + oz;
+      if (Math.abs(alturaEm(x, z) - alturaEm(px, pz)) > CONFIG.degrauMax) return false;
+      px = x; pz = z;
+    }
   }
   return true;
 }
@@ -1188,6 +1501,9 @@ function resolverAtaque(k) {
 // o reino paga a força que falta e, com força >= defesa, o castelo cai (sem sorte). O ataque sai num dia marcado no relatório.
 function novaGuerra() { return { tomados: {}, ataque: null, tropa: null, noticias: [], fim: false }; }
 function descPorId(id) { return DESCOBERTAS.filter(function (x) { return x.id === id; })[0]; }
+// 'Pedra-Alta' de 'Castelo de Pedra-Alta'; o boato diz 'além do rio' só se o mundo tem rio
+function nomeCurto(id) { return descPorId(id).nome.replace(/^(Fortaleza|Castelo) de /, ''); }
+function alemDoRio() { return AGUA.rio ? ', além do rio' : ''; }
 function olheiroAtivo(o) { return !(o.def.castelo && ESTADO.guerra.tomados[o.def.castelo]); }
 // terras em volta de um castelo tomado ficam em paz: os bandidos não roubam ali
 function emPaz(d) {
@@ -1316,7 +1632,7 @@ function avisosSaida() {
   var av = [], at = ESTADO.guerra.ataque, b = CONFIG.base;
   var pede = pedidoDoRei();
   if (pede) av.push('O rei precisa de ' + pede.recurso + '. Dizem que há ' + CONFIG.reino.pistaRecurso[pede.recurso] + ' ao ' + direcaoDe(b, pede.local) + ' da cidade.');
-  else if (!ESTADO.relatados.castelo) av.push('O rei ouviu um boato: o reino rival fica ao ' + direcaoDe(b, descPorId('castelo')) + ', além do rio.');
+  else if (!ESTADO.relatados.castelo) av.push('O rei ouviu um boato: o reino rival fica ao ' + direcaoDe(b, descPorId('castelo')) + alemDoRio() + '.');
   if (ESTADO.guerra.tropa) av.push('A batalha será hoje: o exército marcha contra ' + descPorId(at.alvo).nome + '. Dá para assistir do alto de um mirante.');
   var al = ESTADO.reino.alertas;
   Object.keys(al).forEach(function (id) {
@@ -2760,7 +3076,7 @@ function mostrarRelatorio(r) {
   }).join('');
   $('relLista').innerHTML = lista || '<li><small>Nenhuma descoberta nova, só terreno.</small></li>';
   var era = r.eraNova ? CONFIG.eras[r.eraNova] : null;
-  $('relEra').textContent = !era ? '' : r.eraNova === CONFIG.eras.length - 1 ? 'O reino chegou à Idade Imperial! Agora o exército de cerco pode atacar o Castelo de Pedra-Alta: veja o plano de batalha.' :
+  $('relEra').textContent = !era ? '' : r.eraNova === CONFIG.eras.length - 1 ? 'O reino chegou à Idade Imperial! Agora o exército de cerco pode atacar o ' + descPorId('castelo').nome + ': veja o plano de batalha.' :
     'O reino entrou na ' + era.nome + '! ' + (era.libera ? 'Agora você tem ' + era.libera + '. ' : '') + 'Dá para fundar ' + (era.postos === 1 ? '1 posto avançado.' : era.postos + ' postos avançados.');
   $('relResumo').textContent = 'Relatado em ' + r.base + '. ' + r.celulas + ' trechos de terreno passados a tinta. Influência +' + r.ganho + ' (total ' + ESTADO.influencia + '). Ração da próxima expedição: ' + racaoMaxima() + ' porções.';
   $('relEstoque').innerHTML = textoEstoque(ESTADO.reino.entregueHoje) + '<br>' + textoMercado(r.trocas) + textoProximaEra();
@@ -2935,12 +3251,13 @@ function som(tipo, atraso) {
 function vibrar(p) { if (AJUSTES.vibrar && navigator.vibrate) { try { navigator.vibrate(p); } catch (e) { /* ignora */ } } }
 
 // ---- save com versão
-var CHAVE_SAVE = 'the-scout-save';
+var CHAVE_SAVE = 'the-scout-save';   // do mundo aberto: abrirMundo() troca para o save de um mundo gerado
 function salvar() {
   try {
     var mapa = '';
     for (var k = 0; k < ESTADO.nevoa.length; k++) mapa += ESTADO.nevoa[k] === 2 ? '1' : '0';
     localStorage.setItem(CHAVE_SAVE, JSON.stringify({ v: 1, seed: ESTADO.seed, mapa: mapa, relatados: ESTADO.relatados, influencia: ESTADO.influencia, dia: ESTADO.dia, postos: ESTADO.postos, baseAtual: ESTADO.baseAtual, estoque: ESTADO.estoque, era: ESTADO.era, destruidos: ESTADO.destruidos, guerra: { tomados: ESTADO.guerra.tomados, ataque: ESTADO.guerra.ataque, noticias: ESTADO.guerra.noticias, fim: ESTADO.guerra.fim } }));
+    anotarMundo();
   } catch (e) { /* sem armazenamento: segue sem salvar */ }
 }
 function apagarSave() { try { localStorage.removeItem(CHAVE_SAVE); localStorage.removeItem(CHAVE_TUTORIAL); localStorage.removeItem(CHAVE_TUTORIAL_PASSO); } catch (e) { /* ok */ } }
@@ -3246,19 +3563,20 @@ function mostrarGuerra(soPlano) {
   (UIG.roubosVistos || []).forEach(function (r) {
     html += '<div class="noticia">Bandidos roubaram perto de <b>' + r.nome + '</b> (' + Object.keys(r.qtd).map(function (k) { return r.qtd[k] + ' de ' + k; }).join(', ') + '). Vieram do ' + r.dir + ' de lá.</div>';
   });
-  if (!ESTADO.relatados.castelo && !g.tomados.castelo) html += '<p><small>Boato do rei: o reino rival fica ao ' + direcaoDe(CONFIG.base, descPorId('castelo')) + ', além do rio.</small></p>';
+  if (!ESTADO.relatados.castelo && !g.tomados.castelo) html += '<p><small>Boato do rei: o reino rival fica ao ' + direcaoDe(CONFIG.base, descPorId('castelo')) + alemDoRio() + '.</small></p>';
   if (g.ataque) html += '<div class="plano"><b>Ataque marcado:</b> o exército marcha contra ' + descPorId(g.ataque.alvo).nome + ' na próxima expedição. Assista do alto de um mirante.</div>';
   alvosVisiveis().forEach(function (id) { html += textoPlano(planoBatalha(id)); });
   $('relGuerra').innerHTML = html;
   if (fim && !soPlano) {
-    $('vitTexto').textContent = 'Em ' + ESTADO.dia + ' dias, o seu mapa levou o exército até o portão de Pedra-Alta, e o castelo caiu. O mapa desta região está completo; você pode continuar explorando.';
+    $('vitTitulo').textContent = nomeCurto('castelo') + ' caiu!';
+    $('vitTexto').textContent = 'Em ' + ESTADO.dia + ' dias, o seu mapa levou o exército até o portão de ' + nomeCurto('castelo') + ', e o castelo caiu. O mapa desta região está completo; você pode continuar explorando ou partir para um mundo novo.';
     $('vitoria').classList.remove('oculto');
   }
 }
 function textoPlano(p) {
   var custo = Object.keys(p.custo).filter(function (r) { return p.custo[r] > 0; }).map(function (r) { return p.custo[r] + ' de ' + r; }).join(', ');
   return '<div class="plano"><b>Plano de batalha: ' + p.nome + '</b><br>Defesa ' + p.defesa + (p.defesa < p.defesaBase ? ' <small>(era ' + p.defesaBase + ' antes da espionagem)</small>' : '') +
-    ' · força do reino ' + (p.forcaEra + p.corvo) + (p.corvo ? ' <small>(com ' + p.corvo + ' soldados de Corvo-Negro)</small>' : '') +
+    ' · força do reino ' + (p.forcaEra + p.corvo) + (p.corvo ? ' <small>(com ' + p.corvo + ' soldados de ' + nomeCurto('fortaleza') + ')</small>' : '') +
     '<ul>' + p.pontos.map(function (q) { return '<li class="' + (q.ok ? 'feito' : '') + '">' + (q.ok ? '✓ ' : '○ ') + q.nome + ' <small>(−' + Math.round(q.parte * p.defesaBase) + ': ' + q.efeito + ')</small></li>'; }).join('') + '</ul>' +
     'Exército: ' + p.soldados + ' soldados <small>(máximo da era ' + p.maxSoldados + ')</small> · custa ' + custo +
     (p.falta.length ? '<br><span class="falta">Falta: ' + p.falta.join('; ') + '.</span>' :
@@ -3281,9 +3599,116 @@ function atualizarObjetivos() {
   UIG.objAlvo = id; setClasse('objetivos', 'oculto', !id);
   if (!id) return;
   var p = UIG.planos[id], at = ESTADO.guerra.ataque;
-  $('objetivos').innerHTML = '<b>' + p.nome.replace(/^(Fortaleza|Castelo) de /, '') + '</b><ul>' + p.pontos.map(function (q) {
+  $('objetivos').innerHTML = '<b>' + nomeCurto(id) + '</b><ul>' + p.pontos.map(function (q) {
     return '<li class="' + (q.ok ? 'feito' : '') + '">' + (q.ok ? '✓ ' : '○ ') + NOME_PONTO[q.id] + (q.de > 1 ? ' ' + q.n + '/' + q.de : '') + '</li>';
   }).join('') + '</ul><small>' + (at && at.alvo === id ? (ESTADO.guerra.tropa ? 'Batalha hoje' : 'Ataque marcado') : 'Defesa ' + p.defesa + ' · força ' + (p.forcaEra + p.corvo)) + '</small>';
+}
+
+// ===== 57_mundos_ui.js
+// ---- mundos salvos e o CRIAR NOVO MUNDO. Índice em the-scout-mundos ({ atual, lista, info }); cada mundo gerado tem o próprio save
+// (the-scout-save-<id>) e o Primeiro mundo continua no the-scout-save de sempre. O tutorial é um só para todos os mundos.
+// Trocar de mundo recarrega a página (o render é montado uma vez); um mundo novo é gerado e validado na carga seguinte.
+var CHAVE_MUNDOS = 'the-scout-mundos';
+var ROTULOS_OPCAO = { tamanho: { normal: 'Normal', pequeno: 'Pequeno', grande: 'Grande' }, floresta: { normal: 'Normal', pouca: 'Pouca', muita: 'Muita' },
+  torres: { normal: 'Normais', poucas: 'Poucas', muitas: 'Muitas' }, acampamentos: { normal: 'Normais', poucos: 'Poucos', muitos: 'Muitos' }, rio: { sim: 'Com rio', nao: 'Sem rio' } };
+
+function lerMundos() {
+  try { var s = JSON.parse(localStorage.getItem(CHAVE_MUNDOS) || 'null'); if (s && Array.isArray(s.lista)) { s.info = s.info || {}; return s; } } catch (e) { /* índice corrompido */ }
+  return { atual: 'primeiro', lista: [], info: {} };
+}
+function gravarMundos(idx) { try { localStorage.setItem(CHAVE_MUNDOS, JSON.stringify(idx)); } catch (e) { /* sem armazenamento */ } }
+function chaveSaveDe(id) { return id === 'primeiro' ? 'the-scout-save' : 'the-scout-save-' + id; }
+function opcoesDaUrl() { var o = opcoesPadrao(); Object.keys(o).forEach(function (k) { var v = PARAMS.get(k); if (v && OPCOES_MUNDO[k][v] !== undefined) o[k] = v; }); return o; }
+
+// na partida: monta o mundo escolhido (?mundo=id, o último jogado ou o Primeiro), define CHAVE_SAVE e devolve o ESTADO dele
+function abrirMundo() {
+  var idx = lerMundos(), id = PARAMS.get('mundo') || idx.atual || 'primeiro', ger = PARAMS.get('gerar');
+  if (ger !== null) {   // ?gerar=N: mundo gerado para teste, fora da lista
+    var op = opcoesDaUrl(), sg = gerarMundoValido(parseInt(ger, 10) || 1, op);
+    if (sg !== null) { MUNDO = { id: 'gerar', nome: nomeDeMundo(sg), seed: sg, opcoes: op, gerado: true }; CHAVE_SAVE = chaveSaveDe('gerar'); return ESTADO; }
+  }
+  var w = idx.lista.filter(function (x) { return x.id === id; })[0];
+  if (w && w.novo) {   // pedido no menu: gera e valida agora; se nenhuma semente servir, o mundo não entra
+    var s = gerarMundoValido(w.seed, w.opcoes);
+    if (s === null) {
+      idx.lista = idx.lista.filter(function (x) { return x !== w; }); idx.atual = idx.anterior || 'primeiro'; gravarMundos(idx);
+      UI.avisoMundo = 'Não deu para montar um mundo completo com essas opções. Tente outras.';
+      return abrirMundo();
+    }
+    w.seed = s; delete w.novo; gravarMundos(idx);
+    MUNDO = Object.assign({}, w, { gerado: true }); CHAVE_SAVE = chaveSaveDe(w.id); return ESTADO;
+  }
+  if (w) { var m = montarMundo(w.seed, w.opcoes); if (m) { aplicarMundo(m); MUNDO = Object.assign({}, w, { gerado: true }); CHAVE_SAVE = chaveSaveDe(w.id); return novoEstado(w.seed); } }
+  MUNDO = { id: 'primeiro', nome: 'Primeiro mundo', seed: parseInt(PARAMS.get('seed') || '7', 10), gerado: false };
+  CHAVE_SAVE = chaveSaveDe('primeiro');
+  return novoEstado(MUNDO.seed);
+}
+// depois de cada save: dia e era do mundo na lista
+function anotarMundo() {
+  if (MUNDO.id === 'gerar') return;
+  var idx = lerMundos(); idx.info[MUNDO.id] = { dia: ESTADO.dia, era: ESTADO.era, fim: ESTADO.guerra.fim }; gravarMundos(idx);
+}
+// recarrega no mundo atual do índice (sem ?mundo, ?gerar nem ?reset, que apagaria o save do mundo escolhido)
+function recarregarMundo() {
+  var u = new URL(location.href); ['mundo', 'gerar', 'reset', 'seed'].forEach(function (k) { u.searchParams.delete(k); });
+  if (u.href === location.href) location.reload(); else location.replace(u.href);
+}
+function jogarMundo(id) { var idx = lerMundos(); idx.atual = id; gravarMundos(idx); recarregarMundo(); }
+function apagarMundo(id) {
+  var idx = lerMundos(); idx.lista = idx.lista.filter(function (x) { return x.id !== id; }); delete idx.info[id];
+  try { localStorage.removeItem(chaveSaveDe(id)); } catch (e) { /* ok */ }
+  if (idx.atual === id) { idx.atual = 'primeiro'; gravarMundos(idx); recarregarMundo(); return; }
+  gravarMundos(idx); listarMundos();
+}
+function criarMundoNovo() {
+  var op = {}; Object.keys(OPCOES_MUNDO).forEach(function (k) { op[k] = $('mn_' + k).value; });
+  var txt = $('mnSemente').value.trim(), seed = /^\d+$/.test(txt) ? parseInt(txt, 10) % 1000000000 : Math.floor(Math.random() * 1000000);
+  var idx = lerMundos(), id = 'm' + Date.now().toString(36);
+  idx.lista.push({ id: id, nome: $('mnNome').value.trim().slice(0, 30) || nomeDeMundo(seed), seed: seed, opcoes: op, gv: GERADOR_VERSAO, novo: true });
+  idx.anterior = MUNDO.id === 'gerar' ? 'primeiro' : MUNDO.id; idx.atual = id; gravarMundos(idx);
+  setTexto('mnMsg', 'Montando o mundo…'); recarregarMundo();
+}
+
+function descricaoMundo(w, info) {
+  var op = w.opcoes ? Object.keys(ROTULOS_OPCAO).filter(function (k) { return w.opcoes[k] && w.opcoes[k] !== opcoesPadrao()[k]; }).map(function (k) { return ROTULOS_OPCAO[k][w.opcoes[k]]; }) : [];
+  return (info ? 'Dia ' + info.dia + ' · ' + CONFIG.eras[info.era || 0].nome + (info.fim ? ' · conquistado' : '') : 'Ainda não jogado') +
+    (w.id === 'primeiro' ? ' · feito à mão' : ' · semente ' + w.seed) + (op.length ? ' · ' + op.join(', ') : '');
+}
+function listarMundos() {
+  var idx = lerMundos(), todos = [{ id: 'primeiro', nome: 'Primeiro mundo' }].concat(idx.lista.filter(function (w) { return !w.novo; }));
+  idx.info[MUNDO.id] = MUNDO.id === 'gerar' ? null : { dia: ESTADO.dia, era: ESTADO.era, fim: ESTADO.guerra.fim };
+  $('mundosLista').innerHTML = todos.map(function (w) {
+    var atual = w.id === MUNDO.id, info = idx.info[w.id];
+    return '<li><b>' + w.nome.replace(/</g, '&lt;') + '</b>' + (atual ? ' <span class="tag">atual</span>' : '') + '<br><small>' + descricaoMundo(w, info) + '</small>' +
+      '<span class="ajBotoes">' + (atual ? '' : '<button class="botao mini" data-jogar="' + w.id + '">Jogar</button>') +
+      (w.id === 'primeiro' ? '' : '<button class="botao mini perigo" data-apagar="' + w.id + '">Apagar</button>') + '</span></li>';
+  }).join('');
+}
+function abrirMundos(proximo) {
+  listarMundos();
+  Object.keys(OPCOES_MUNDO).forEach(function (k) { $('mn_' + k).value = Object.keys(OPCOES_MUNDO[k])[0]; });
+  $('mnNome').value = ''; $('mnSemente').value = ''; setTexto('mnMsg', proximo ? 'O mapa desta região está completo. Escolha como será a próxima.' : '');
+  UI.pausado = true; $('mundos').classList.remove('oculto');
+}
+
+function criarUIMundos() {
+  // opções do formulário a partir de OPCOES_MUNDO (a primeira é o padrão)
+  Object.keys(OPCOES_MUNDO).forEach(function (k) {
+    $('mn_' + k).innerHTML = Object.keys(OPCOES_MUNDO[k]).map(function (v) { return '<option value="' + v + '">' + ROTULOS_OPCAO[k][v] + '</option>'; }).join('');
+  });
+  setTexto('menuMundo', MUNDO.nome);
+  if (UI.avisoMundo) { $('menuAviso').textContent = UI.avisoMundo; $('menuAviso').classList.remove('oculto'); }
+  $('btnMundos').addEventListener('click', function () { abrirMundos(false); });
+  $('btnProximoMundo').addEventListener('click', function () { $('vitoria').classList.add('oculto'); abrirMundos(true); });
+  $('btnFecharMundos').addEventListener('click', function () { $('mundos').classList.add('oculto'); UI.pausado = false; });
+  $('btnCriarMundo').addEventListener('click', criarMundoNovo);
+  // apagar pede um segundo toque (confirm() é bloqueado dentro do Artifact)
+  $('mundosLista').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button'); if (!b) return;
+    if (b.dataset.jogar) { jogarMundo(b.dataset.jogar); return; }
+    if (!b.dataset.confirma) { b.dataset.confirma = '1'; b.textContent = 'Toque de novo'; setTimeout(function () { delete b.dataset.confirma; b.textContent = 'Apagar'; }, 3000); return; }
+    apagarMundo(b.dataset.apagar);
+  });
 }
 
 // ===== 60_musica.js
@@ -3490,18 +3915,17 @@ var LACO = { acc: 0, ultimo: 0, proximo: 0, fpsQuadros: 0, fpsT: 0 };
 
 function iniciar() {
   window.onerror = function (msg) { var el = document.getElementById('erro'); el.textContent = 'Erro: ' + msg; el.style.display = 'block'; };
-  var seed = parseInt(PARAMS.get('seed') || '7', 10);
-  ESTADO = novoEstado(seed);
+  ESTADO = abrirMundo();   // Primeiro mundo ou um gerado (57_mundos_ui.js); define CHAVE_SAVE
   carregar(); carregarAjustes();
   criarRender(); criarRenderReino(); criarRenderGuerra();
   criarInput();
-  criarUI(); criarUIGuerra(); criarTutorial();
+  criarUI(); criarUIGuerra(); criarUIMundos(); criarTutorial();
   LACO.ultimo = performance.now();
   R.renderer.setAnimationLoop(quadro);
 
   window.__game = function () {
     var j = ESTADO.jog, info = R.renderer.info.render;
-    return { fase: ESTADO.fase, dia: ESTADO.dia, tempo: +ESTADO.tempo.toFixed(2), jog: { x: +j.x.toFixed(2), z: +j.z.toFixed(2), escondido: j.escondido, ruido: j.ruido, visao: +j.visao.toFixed(1), racao: +j.racao.toFixed(2), racaoMax: j.racaoMax, faminto: j.faminto, montado: ESTADO.cavalo.montado, cavalo: [+ESTADO.cavalo.x.toFixed(1), +ESTADO.cavalo.z.toFixed(1)] }, passaroUsado: ESTADO.passaro.usado, mapaAberto: MAPA.aberto, estoque: ESTADO.estoque, trabalhadores: ESTADO.reino.trabalhadores.map(function (t) { return t.local + ':' + t.fase; }), alertas: Object.keys(ESTADO.reino.alertas), cavaleiros: ESTADO.reino.cavaleiros.map(function (c) { return c.tipo + ':' + (c.local || c.campo) + ':' + c.fase; }), destruidos: ESTADO.destruidos, guerra: { tomados: ESTADO.guerra.tomados, ataque: ESTADO.guerra.ataque, tropa: ESTADO.guerra.tropa && ESTADO.guerra.tropa.fase, fim: ESTADO.guerra.fim },
+    return { fase: ESTADO.fase, dia: ESTADO.dia, tempo: +ESTADO.tempo.toFixed(2), jog: { x: +j.x.toFixed(2), z: +j.z.toFixed(2), escondido: j.escondido, ruido: j.ruido, visao: +j.visao.toFixed(1), racao: +j.racao.toFixed(2), racaoMax: j.racaoMax, faminto: j.faminto, montado: ESTADO.cavalo.montado, cavalo: [+ESTADO.cavalo.x.toFixed(1), +ESTADO.cavalo.z.toFixed(1)] }, passaroUsado: ESTADO.passaro.usado, mundo: MUNDO.id, mapaAberto: MAPA.aberto, estoque: ESTADO.estoque, trabalhadores: ESTADO.reino.trabalhadores.map(function (t) { return t.local + ':' + t.fase; }), alertas: Object.keys(ESTADO.reino.alertas), cavaleiros: ESTADO.reino.cavaleiros.map(function (c) { return c.tipo + ':' + (c.local || c.campo) + ':' + c.fase; }), destruidos: ESTADO.destruidos, guerra: { tomados: ESTADO.guerra.tomados, ataque: ESTADO.guerra.ataque, tropa: ESTADO.guerra.tropa && ESTADO.guerra.tropa.fase, fim: ESTADO.guerra.fim },
       caderno: ESTADO.caderno.map(function (e) { return e.id + ':' + e.nivel; }), relatados: ESTADO.relatados, influencia: ESTADO.influencia,
       olheiros: ESTADO.olheiros.map(function (o) { return o.def.id + ':' + o.susp.toFixed(2) + (o.cav ? '!' : ''); }),
       revelado: ESTADO.nevoa.reduce(function (s, v) { return s + (v > 0 ? 1 : 0); }, 0), calls: info.calls, triangulos: info.triangles };
