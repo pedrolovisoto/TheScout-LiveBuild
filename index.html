@@ -188,6 +188,7 @@
       <span class="ajBotoes"><button id="btnCopiarAjustes" class="botao mini">Copiar</button><button id="btnColarAjustes" class="botao mini">Aplicar</button><small id="ajCopiarMsg"></small></span></div>
     <p><small>Leve e 30 quadros esquentam menos o celular e gastam menos bateria.</small></p>
     <button id="btnFecharAjustes" class="botao">Voltar</button>
+    <button id="btnSairMenu" class="botao secundario oculto">Menu principal</button>
   </div></div>
 
   <div id="mundos" class="tela oculto"><div class="cartao">
@@ -338,7 +339,7 @@ var CONFIG = {
 
   // toque
   // folga: corre a partir de limiarCorrer e só volta a andar abaixo de limiarCorrer - folgaCorrer (px)
-  zonaMorta: 8, limiarCorrer: 90, folgaCorrer: 12, tempoToque: 220, duploToque: 320,
+  zonaMorta: 20, limiarCorrer: 85, folgaCorrer: 12, tempoToque: 220, duploToque: 320,
 };
 
 // padrões = Ajustes que o Pedro usa no celular (2026-10-18): Alta, sombras, 60 fps, volume 60%, vibração, corre aos 90 px, sem FPS
@@ -351,7 +352,7 @@ var AJUSTES_PADRAO = { v: 3, pixelRatio: 2, sombras: true, fps: 60, vibrar: true
   // duração do dia e quando entardece e anoitece, em segundos de jogo (vira CONFIG.duracaoDia, inicioTarde, inicioNoite)
   dia: CONFIG.duracaoDia, tarde: Math.round(CONFIG.duracaoDia * CONFIG.inicioTarde), noite: Math.round(CONFIG.duracaoDia * CONFIG.inicioNoite) };
 AJUSTES_PADRAO.ondaForca = 1;      // anel do som dos passos: multiplica a ondulação e o tranco da passada (0 = linha lisa)
-AJUSTES_PADRAO.ondaLargura = 0.08; // espessura da linha do anel do som, em unidades do mundo
+AJUSTES_PADRAO.ondaLargura = 0.1;  // espessura da linha do anel do som, em unidades do mundo
 AJUSTES_PADRAO.musica = 0.7;   // volume da música (0 a 1, multiplica o Volume); camadas em 60_musica.js
 var AJUSTES = Object.assign({}, AJUSTES_PADRAO);
 
@@ -3430,11 +3431,15 @@ function rotuloMov(id, v) {
   if (id === 'ajOndaLarg') return v.toFixed(2).replace('.', ',');
   return /^aj(Zona|Correr)$/.test(id) ? v + ' px' : v.toFixed(1).replace('.', ',') + ' /s';
 }
+// sair no meio da expedição perde o dia: o save só é gravado no relatório ou na captura
+function perdeAoSair() { return ESTADO.fase === 'expedicao' && (ESTADO.saiuDaBase || temOQueEnviar() || !!ESTADO.passaro.carga); }
+function desarmarSair() { var b = $('btnSairMenu'); clearTimeout(UI.sairAte); delete b.dataset.confirma; b.textContent = 'Menu principal'; }
 function criarAjustes() {
   var campos = { ajQualidade: 'pixelRatio', ajSombras: 'sombras', ajFps: 'fps', ajVolume: 'volume', ajMusica: 'musica', ajVibrar: 'vibrar', ajFpsVer: 'mostrarFps', ajDia: 'dia', ajTarde: 'tarde', ajNoite: 'noite', ajZona: 'zonaMorta', ajCorrer: 'correrAos', ajLento: 'velLento', ajAndar: 'velAndar', ajCorrerVel: 'velCorrer', ajOndaForca: 'ondaForca', ajOndaLarg: 'ondaLargura' };
   function abrir() {
     Object.keys(campos).forEach(function (id) { var el = $(id), v = AJUSTES[campos[id]]; if (el.type === 'checkbox') el.checked = v; else el.value = String(v); });
     mostrarDia(); $('ajTexto').value = textoAjustes(); setTexto('ajCopiarMsg', '');
+    $('btnSairMenu').classList.toggle('oculto', ESTADO.fase === 'menu'); desarmarSair();
     UI.pausado = true; $('ajustes').classList.remove('oculto');
   }
   Object.keys(campos).forEach(function (id) {
@@ -3462,6 +3467,12 @@ function criarAjustes() {
   $('btnAjustes').addEventListener('click', abrir);
   $('btnAjustesMenu').addEventListener('click', abrir);
   $('btnFecharAjustes').addEventListener('click', function () { $('ajustes').classList.add('oculto'); UI.pausado = false; });
+  // menu principal: recarrega no último save; no meio da expedição pede um segundo toque (confirm() é bloqueado no Artifact)
+  $('btnSairMenu').addEventListener('click', function () {
+    var b = $('btnSairMenu');
+    if (perdeAoSair() && !b.dataset.confirma) { b.dataset.confirma = '1'; b.textContent = 'Toque de novo: o que não foi relatado hoje se perde'; UI.sairAte = setTimeout(desarmarSair, 3000); return; }
+    recarregarMundo();
+  });
   aplicarAjustes();
 }
 
