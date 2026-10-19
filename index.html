@@ -236,6 +236,7 @@ var CONFIG = {
   fundoAgua: 0.8,           // a água fica abaixo do chão, entre barrancos
   relevoFino: 4,            // amostras do relevo por célula em cada eixo (borda dos platôs e da água fora da grade)
   degrauMax: 0.35,          // maior diferença de altura num passo (penhasco bloqueia)
+  degrauDescer: 0.7,        // descendo, um degrau maior passa (sai pela beira baixa de uma rampa); penhasco continua bloqueando
   visaoPorNivel: 2.5,       // visão extra por nível de altura
   patrulhaVeAcima: 1.3,     // patrulha não enxerga quem está mais alto que isso
 
@@ -503,7 +504,7 @@ function gerarMapa(seed) {
     var n = r1(x / 22, z / 22) * 0.7 + r2(x / 9, z / 9) * 0.3, t = T.CAMPO;
     if (n > AGUA.limFloresta) t = T.FLORESTA; else if (n > AGUA.limMato) t = T.MATO;
     // rio sinuoso e lago; o vau é o trecho raso do rio (lago não tem vau)
-    if (aguaContinua(x, z)) t = !noLago(x, z) && AGUA.vaus.some(function (v) { return Math.abs(x - v.x) < v.larg; }) ? T.VAU : T.AGUA;
+    if (aguaContinua(x, z)) t = !noLago(x, z) && noVau(x, z) ? T.VAU : T.AGUA;
     grade[j * L + i] = t;
   }
   function pinta(x, z, r, t, soSe) {   // só as células que o círculo pode tocar
@@ -531,12 +532,19 @@ function gerarMapa(seed) {
   return grade;
 }
 
-// rio sinuoso e lago como formas contínuas (a grade e o relevo fino usam as duas). Dados do mundo: o Primeiro mundo usa estes,
-// um mundo gerado troca (12_mundo.js). Rio: z do meio, amplitude, período e fase da curva, meia largura; limites do ruído da vegetação
-var AGUA = { rio: { z: 120, amp: 6, per: 21, fase: 0, larg: 3 }, lagos: [{ x: 144, z: 42, r: 13 }], vaus: [{ x: 33, larg: 3.5 }], limFloresta: 0.62, limMato: 0.5 };
-function rioZ(x) { var r = AGUA.rio; return r.z + r.amp * Math.sin(x / r.per + r.fase); }
+// rios sinuosos e lagos como formas contínuas (a grade e o relevo fino usam as duas). Dados do mundo: o Primeiro mundo usa estes,
+// um mundo gerado troca (12_mundo.js). Rio: c (z do meio; x se vertical), inclinação, amplitude, período e fase da curva, meia largura,
+// de/ate (trecho, se não atravessa o mapa todo) e vaus (posição ao longo dele). alemDoRio: a estrada da base ao castelo cruza um rio
+var AGUA = { rios: [{ c: 120, amp: 6, per: 21, fase: 0, larg: 3, vaus: [{ t: 33, larg: 3.5 }] }], lagos: [{ x: 144, z: 42, r: 13 }], limFloresta: 0.62, limMato: 0.5, alemDoRio: true };
+function rioPos(r, t) { return r.c + (r.incl || 0) * (t - (r.meio || 0)) + r.amp * Math.sin(t / r.per + r.fase); }
+// dentro do rio: perto da curva na direção cruzada; as pontas de um rio que acaba no meio do mapa são redondas
+function noRio(r, x, z) {
+  var t = r.vertical ? z : x, q = r.vertical ? x : z, tc = r.de !== undefined && t < r.de ? r.de : r.ate !== undefined && t > r.ate ? r.ate : t;
+  var dq = q - rioPos(r, tc), dt = t - tc; return dq * dq + dt * dt < r.larg * r.larg;
+}
 function noLago(x, z) { return AGUA.lagos.some(function (l) { return dist2(x, z, l.x, l.z) < l.r * l.r; }); }
-function aguaContinua(x, z) { return (!!AGUA.rio && Math.abs(z - rioZ(x)) < AGUA.rio.larg) || noLago(x, z); }
+function aguaContinua(x, z) { for (var n = 0; n < AGUA.rios.length; n++) if (noRio(AGUA.rios[n], x, z)) return true; return noLago(x, z); }
+function noVau(x, z) { return AGUA.rios.some(function (r) { var t = r.vertical ? z : x; return noRio(r, x, z) && r.vaus.some(function (v) { return Math.abs(t - v.t) < v.larg; }); }); }
 
 // relevo num ponto qualquer: nível do platô (borda com ruído), rampa que passa ali (-1 = nenhuma) e água
 function relevoPonto(x, z, tipo, rb) {
@@ -592,14 +600,14 @@ function alturaRampa(r, x, z) {
 // as mesmas tabelas globais (DESCOBERTAS, OLHEIROS, PLATOS...), então sim, render, som, tutorial e guerra funcionam igual em todos.
 // Papéis fixos: 'castelo' é o castelo final (fecha o mapa) e 'fortaleza' o rival opcional; o resto dos ids vem do gerador.
 var MUNDO = { id: 'primeiro', nome: 'Primeiro mundo', seed: 7, gerado: false };
-var GERADOR_VERSAO = 1;   // mudou o gerador: mundos salvos com outra versão sairiam diferentes (o save só confere o tamanho)
+var GERADOR_VERSAO = 2;   // mudou a receita: suba. Cada mundo guarda o mapa pronto (the-scout-mapa-<id>); sem ele e de outra versão, é refeito do zero
 // escolhas do CRIAR NOVO MUNDO (a primeira de cada é o padrão): células, limites do ruído (floresta, mato), torres soltas, acampamentos
 var OPCOES_MUNDO = {
   tamanho: { normal: [90, 135], pequeno: [80, 120], grande: [108, 162] },
   floresta: { normal: [0.62, 0.5], pouca: [0.7, 0.57], muita: [0.55, 0.44] },
   torres: { normal: 1, poucas: 0, muitas: 3 },   // além da torre da ponte e das torres dos dois castelos
   acampamentos: { normal: 3, poucos: 2, muitos: 4 },
-  rio: { sim: true, nao: false },
+  rio: { sorteado: 'sorteado', atravessado: 'atravessado', vertical: 'vertical', dois: 'dois', nao: false },
 };
 function opcoesPadrao() { var o = {}; Object.keys(OPCOES_MUNDO).forEach(function (k) { o[k] = Object.keys(OPCOES_MUNDO[k])[0]; }); return o; }
 
@@ -642,22 +650,42 @@ function distSeg(x, z, a, b) {
   return Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t);
 }
 
-// ---- gerador: mesma receita do Primeiro mundo (base no alto ao sul, rio no meio com ponte e vau, castelo final ao norte com
-// portão, torre, cão e patrulha; fortaleza rival de um lado; mirantes, postos, 2 locais de cada recurso). Devolve null se não coube;
-// quem garante que dá para jogar é validarMundo().
+// ---- gerador (versão 2): mesma receita do Primeiro mundo (base no alto ao sul, castelo final ao norte com portão, torre, cão e
+// patrulha; fortaleza rival do outro lado; mirantes, postos, 2 locais de cada recurso), com rios de vários tipos e estradas que
+// fazem curva e cruzam os rios em pontes. Devolve null se não coube; quem garante que dá para jogar é validarMundo().
+var TIPOS_RIO = ['atravessado', 'atravessado', 'atravessado', 'vertical', 'vertical', 'dois', 'dois', 'dois'];   // sorteio do "Sorteado"
+var FALHA_MUNDO = '';   // por que a última semente não coube (para o teste e para ajustar a receita)
 function montarMundo(seed, op) {
   op = Object.assign(opcoesPadrao(), op || {});
+  function falhou(motivo) { FALHA_MUNDO = motivo; return null; }
   var rng = criarRNG(seed * 7919 + 13), tam = OPCOES_MUNDO.tamanho[op.tamanho] || OPCOES_MUNDO.tamanho.normal, fl = OPCOES_MUNDO.floresta[op.floresta] || OPCOES_MUNDO.floresta.normal;
-  var L = tam[0], A = tam[1], W = L * CONFIG.celula, H = A * CONFIG.celula, esc = A / 135, temRio = OPCOES_MUNDO.rio[op.rio] !== false;
-  var desc = [], olh = [], postos = [], mirantes = [], platos = [], rampas = [], estradas = [], ocup = [], usados = {};
-  var agua = { rio: temRio ? { z: H * rng.range(0.42, 0.47), amp: rng.range(4, 7), per: rng.range(17, 25), fase: rng.range(0, 6.28), larg: 3 } : null,
-               lagos: [], vaus: [], limFloresta: fl[0], limMato: fl[1] };
-  var zr = temRio ? agua.rio.z : H * 0.45;
-  function rz(x) { var r = agua.rio; return r ? r.z + r.amp * Math.sin(x / r.per + r.fase) : zr; }
+  var L = tam[0], A = tam[1], W = L * CONFIG.celula, H = A * CONFIG.celula, esc = A / 135;
+  var tipoRio = OPCOES_MUNDO.rio[op.rio] === undefined ? 'atravessado' : OPCOES_MUNDO.rio[op.rio] === 'sorteado' ? rng.item(TIPOS_RIO) : OPCOES_MUNDO.rio[op.rio];
+  var desc = [], olh = [], postos = [], mirantes = [], platos = [], rampas = [], estradas = [], ocup = [], usados = {}, pontes = [];
+  var agua = { rios: [], lagos: [], limFloresta: fl[0], limMato: fl[1], alemDoRio: false };
+  function arred(p) { return [Math.round(p[0] * 2) / 2, Math.round(p[1] * 2) / 2]; }
+  function dentro(p, m) { return p[0] > m && p[0] < W - m && p[1] > m && p[1] < H - m; }
+  // ---- rios: posição ao longo (t) e de través (q); pontoRio dá o (x, z)
+  function pontoRio(r, t) { var q = rioPos(r, t); return r.vertical ? [q, t] : [t, q]; }
+  function inteiro(r) { return r.de === undefined && r.ate === undefined; }
+  function ladoRio(r, x, z) { return Math.sign((r.vertical ? x : z) - rioPos(r, r.vertical ? z : x)); }
+  // o rio (ou só o rio 'so') que passa a menos de m da margem em (x, z), ou null
+  function pertoDeRio(x, z, m, so) {
+    for (var n = 0; n < agua.rios.length; n++) {
+      var r = agua.rios[n]; if (so && r !== so) continue;
+      var t = r.vertical ? z : x, q = r.vertical ? x : z, a = m + r.larg + 2;
+      for (var tt = t - a; tt <= t + a; tt += 1.5) {
+        var tc = r.de !== undefined && tt < r.de ? r.de : r.ate !== undefined && tt > r.ate ? r.ate : tt;
+        var dq = q - rioPos(r, tc), dt = t - tc;
+        if (dq * dq + dt * dt < (r.larg + m) * (r.larg + m)) return r;
+      }
+    }
+    return null;
+  }
   // cabe um círculo de raio r em (x, z)? longe da borda, da água, do que já foi posto e (folga) das estradas
   function livre(x, z, r, folga) {
     if (x < r + 4 || x > W - r - 4 || z < r + 4 || z > H - r - 4) return false;
-    if (agua.rio) for (var k = -1; k <= 1; k++) if (Math.abs(z - rz(x + k * r)) < agua.rio.larg + r + 2) return false;
+    if (pertoDeRio(x, z, r + 2)) return false;
     if (agua.lagos.some(function (l) { return dist2(x, z, l.x, l.z) < (l.r + r + 2) * (l.r + r + 2); })) return false;
     if (ocup.some(function (o) { return dist2(x, z, o.x, o.z) < (o.r + r) * (o.r + r); })) return false;
     var f = folga === undefined ? 3 : folga;
@@ -683,122 +711,320 @@ function montarMundo(seed, op) {
     return local('torre', x, z, nome, rng.item(NOMES_MUNDO.detalhe.torre), { id: 'torre' + nTorre }).id;
   }
 
-  // base no alto, ao sul, com a rampa descendo para o norte pela estrada (como no Primeiro mundo)
-  var bx = Math.round(W * rng.range(0.35, 0.65)), bz = H - 12;
-  var base = { x: bx, z: bz, raio: 9 }, cavalo = { x: bx + 5, z: bz - 6 };
-  platos.push({ x: bx, z: bz, r: 21.2, nivel: 1 }); rampas.push({ a: [bx, bz - 35], b: [bx, bz - 20], w: 2.6, de: 0, para: 1 });
-  ocup.push({ x: bx, z: bz - 4, r: 30 }, { x: bx, z: bz - 38, r: 6 });
+  // ---- estradas. cruza(P, Q): true se o trecho reto está limpo, false se bate em algo (borda, platô, local, ou um rio inteiro
+  // que P e Q têm do mesmo lado) e { rio, t } se atravessa um rio (aí vira ponte)
+  function cruza(P, Q, ign) {
+    var d = Math.hypot(Q[0] - P[0], Q[1] - P[1]), n = Math.max(1, Math.ceil(d));
+    for (var s = 0; s <= n; s++) {
+      var x = lerp(P[0], Q[0], s / n), z = lerp(P[1], Q[1], s / n);
+      if (!dentro([x, z], 5) || noLagoPerto(x, z, 2.5)) return false;
+      if (ocup.some(function (o) { return ign.indexOf(o) < 0 && dist2(x, z, o.x, o.z) < o.r * o.r * 0.8; })) return false;
+      var r = pertoDeRio(x, z, 1.8);
+      if (r) return inteiro(r) && ladoRio(r, P[0], P[1]) === ladoRio(r, Q[0], Q[1]) ? false : { rio: r, t: r.vertical ? z : x };
+    }
+    return true;
+  }
+  // ponte reta, de través ao rio no ponto t (ou um pouco ao lado), com 16 de cada lado; null se as cabeceiras não ficam em terra
+  function ponte(r, t, P, Q, ign) {
+    var tam = r.vertical ? H : W, offs = [0, 4, -4, 8, -8, 12, -12];
+    for (var k = 0; k < offs.length; k++) {
+      var tt = t + offs[k]; if (tt < 12 || tt > tam - 12 || (r.de !== undefined && tt < r.de + 8) || (r.ate !== undefined && tt > r.ate - 8)) continue;
+      var B = pontoRio(r, tt), dp = (r.incl || 0) + r.amp / r.per * Math.cos(tt / r.per + r.fase), l = Math.hypot(1, dp);
+      var nx = r.vertical ? 1 / l : -dp / l, nz = r.vertical ? -dp / l : 1 / l;
+      if (nx * (Q[0] - P[0]) + nz * (Q[1] - P[1]) < 0) { nx = -nx; nz = -nz; }
+      var a = arred([B[0] - nx * 16, B[1] - nz * 16]), b = arred([B[0] + nx * 16, B[1] + nz * 16]);
+      if (!dentro(a, 8) || !dentro(b, 8) || pertoDeRio(a[0], a[1], 3) || pertoDeRio(b[0], b[1], 3) || noLagoPerto(B[0], B[1], 6)) continue;
+      if ([a, b].some(function (p) { return ocup.some(function (o) { return ign.indexOf(o) < 0 && dist2(p[0], p[1], o.x, o.z) < o.r * o.r; }); })) continue;
+      var outro = false;   // a ponte não passa por cima de outro rio (onde um deságua no outro)
+      for (var s = 0; s <= 32 && !outro; s += 2) { var wx = lerp(a[0], b[0], s / 32), wz = lerp(a[1], b[1], s / 32); outro = agua.rios.some(function (o) { return o !== r && pertoDeRio(wx, wz, 0, o); }); }
+      if (!outro) return { rio: r, t: tt, B: B, n: [nx, nz], a: a, b: b };
+    }
+    return null;
+  }
+  // ponto ao lado do meio de P-Q (f = fração do comprimento), se estiver em lugar livre
+  function curva(P, Q, f, ign) {
+    var dx = Q[0] - P[0], dz = Q[1] - P[1], d = Math.hypot(dx, dz), u = rng.range(0.35, 0.65);
+    var M = arred([P[0] + dx * u - dz / d * f * d, P[1] + dz * u + dx / d * f * d]);
+    if (!dentro(M, 10) || pertoDeRio(M[0], M[1], 5) || noLagoPerto(M[0], M[1], 5)) return null;
+    return ocup.some(function (o) { return ign.indexOf(o) < 0 && dist2(M[0], M[1], o.x, o.z) < (o.r + 3) * (o.r + 3); }) ? null : M;
+  }
+  // estrada de P a Q: às vezes faz curva no meio, desvia do que estiver no caminho e vira ponte onde cruza um rio.
+  // Devolve { pts (sem o P), pontes } ou null
+  function ligar(P, Q, ign, prof) {
+    prof = prof || 0; if (prof > 5) return null;
+    var junta = function (a, meio, b) { return { pts: a.pts.concat(meio, b.pts), pontes: a.pontes.concat(b.pontes) }; };
+    var d = Math.hypot(Q[0] - P[0], Q[1] - P[1]);
+    if (prof < 2 && d > 40 && rng.next() < 0.75) for (var n = 0; n < 3; n++) {
+      var M = curva(P, Q, rng.range(-0.3, 0.3), ign); if (!M) continue;
+      var a = ligar(P, M, ign, prof + 1), b = a && ligar(M, Q, ign, prof + 1);
+      if (b) return junta(a, [], b);
+    }
+    var c = cruza(P, Q, ign);
+    if (c === true) return { pts: [Q], pontes: [] };
+    if (c) {
+      var pt = ponte(c.rio, c.t, P, Q, ign); if (!pt) return null;
+      var a2 = ligar(P, pt.a, ign, prof + 1), b2 = a2 && ligar(pt.b, Q, ign, prof + 1);
+      if (!b2) return null;
+      var r2 = junta(a2, [pt.b], b2); r2.pontes.unshift(pt); return r2;
+    }
+    for (var k = 0; k < 6; k++) {   // algo no caminho: desvia por um lado ou pelo outro
+      var D = curva(P, Q, (k % 2 ? 1 : -1) * rng.range(0.3, 0.6), ign); if (!D) continue;
+      var a3 = ligar(P, D, ign, prof + 1), b3 = a3 && ligar(D, Q, ign, prof + 1);
+      if (b3) return junta(a3, [], b3);
+    }
+    return null;
+  }
+  // sem dobra fechada (mais de ~110 graus) nem trecho de ida e volta
+  function suave(lin) {
+    for (var s = 1; s + 1 < lin.length; s++) {
+      var a = lin[s - 1], b = lin[s], c = lin[s + 1], ax = b[0] - a[0], az = b[1] - a[1], bx2 = c[0] - b[0], bz2 = c[1] - b[1];
+      if (ax * bx2 + az * bz2 < -0.34 * Math.hypot(ax, az) * Math.hypot(bx2, bz2)) return false;
+    }
+    return true;
+  }
+  // ligar até sair uma estrada suave (algumas tentativas)
+  function ligarSuave(P, Q, ign) { for (var n = 0; n < 5; n++) { var e = ligar(P, Q, ign); if (e && suave([P].concat(e.pts))) return e; } return null; }
+  function noLagoPerto(x, z, m) { return agua.lagos.some(function (l) { return dist2(x, z, l.x, l.z) < (l.r + m) * (l.r + m); }); }
+  function seco(P, Q) { for (var s = 0; s <= 20; s++) if (pertoDeRio(lerp(P[0], Q[0], s / 20), lerp(P[1], Q[1], s / 20), 1)) return false; return true; }
+  // ponto das estradas mais perto de (x, z), fora das pontes (para ramais)
+  function naEstrada(x, z) {
+    var best = null, bd = 1e9;
+    estradas.forEach(function (lin) { for (var s = 0; s + 1 < lin.length; s++) {
+      var a = lin[s], b = lin[s + 1], dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz, t = l2 ? clamp(((x - a[0]) * dx + (z - a[1]) * dz) / l2, 0, 1) : 0;
+      var p = arred([a[0] + dx * t, a[1] + dz * t]), dd = dist2(x, z, p[0], p[1]);
+      if (dd < bd && !pertoDeRio(p[0], p[1], 6)) { bd = dd; best = p; }
+    } });
+    return best;
+  }
+  // ramal da estrada mais próxima até P (pode não sair: aí fica sem)
+  function ramal(P, alvo) { var R = naEstrada(P[0], P[1]); if (!R || dist2(R[0], R[1], P[0], P[1]) < 100) return; var e = ligarSuave(R, P, [alvo]); if (e) { estradas.push([R].concat(e.pts)); pontes = pontes.concat(e.pontes); } }
 
-  // castelo final ao norte: platô de dois degraus, portão ao sul, torre de um lado e cão do outro (medidas do Pedra-Alta)
-  var lado = rng.next() < 0.5 ? -1 : 1, cx = Math.round(W * (0.5 + lado * rng.range(0.03, 0.18))), cz = Math.max(36, Math.round(H * rng.range(0.14, 0.17))), sT = rng.next() < 0.5 ? -1 : 1;
+  // ---- base no alto, ao sul; a rampa desce para o norte, virada um pouco para o lado do castelo
+  var bx = Math.round(W * rng.range(0.22, 0.78)), bz = H - 12;
+  var base = { x: bx, z: bz, raio: 9 }, cavalo = { x: bx + 5, z: bz - 6 };
+  // castelo final ao norte, para um lado (lado) e com a subida virada (u) mais ou menos para a base
+  var lado = rng.next() < 0.5 ? -1 : 1, cx = Math.round(W * (0.5 + lado * rng.range(0.06, 0.28))), cz = Math.max(36, Math.round(H * rng.range(0.12, 0.19))), sT = rng.next() < 0.5 ? -1 : 1;
+  var fi = clamp(Math.atan2(bx - cx, bz - cz) * 1.5 + rng.range(-0.5, 0.5), -0.8, 0.8);
+  while (Math.abs(fi) > 0.05 && !dentro([cx + Math.sin(fi) * 44, cz + Math.cos(fi) * 44], 14)) fi *= 0.8;
+  var ux = Math.sin(fi), uz = Math.cos(fi);
+  function noCastelo(dx, dz) { return arred([cx + uz * dx + ux * dz, cz - ux * dx + uz * dz]); }   // dx de lado, dz para fora pela subida
+  var te = clamp(Math.atan2(cx - bx, bz - cz) * 1.5 + rng.range(-0.35, 0.35), -0.75, 0.75), ex = Math.sin(te), ez = -Math.cos(te);
+  function naBase(d) { return arred([bx + ex * d, bz + ez * d]); }
+  var S0 = [bx, bz], S1 = naBase(45), C1 = noCastelo(0, 44), C0 = noCastelo(0, 6);
+  platos.push({ x: bx, z: bz, r: 21.2, nivel: 1 }); rampas.push({ a: naBase(35), b: naBase(20), w: 2.6, de: 0, para: 1 });
+  var bocaBase = { x: naBase(38)[0], z: naBase(38)[1], r: 6 }, bocaCastelo = { x: noCastelo(0, 41)[0], z: noCastelo(0, 41)[1], r: 5 };
+  ocup.push({ x: bx, z: bz - 4, r: 30 }, bocaBase);
   var nomeCastelo = nomeComposto(rng), nomeRival = nomeComposto(rng); while (nomeRival.split('-')[0] === nomeCastelo.split('-')[0]) nomeRival = nomeComposto(rng);
   usados[nomeCastelo] = usados[nomeRival] = 1;
   platos.push({ x: cx, z: cz, r: 28.8, nivel: 1 }, { x: cx, z: cz, r: 13.8, nivel: 2 });
-  rampas.push({ a: [cx, cz + 37.5], b: [cx, cz + 20], w: 2.6, de: 0, para: 1 }, { a: [cx, cz + 17.5], b: [cx, cz + 7.5], w: 2.2, de: 1, para: 2 });
-  ocup.push({ x: cx, z: cz, r: 34 }, { x: cx, z: cz + 41, r: 5 });
-  desc.push({ id: 'castelo', tipo: 'castelo', nome: 'Castelo de ' + nomeCastelo, x: cx, z: cz + 2.5, avistar: 3, observar: 9, detalhe: 'Guarnição grande, muralha de pedra' });
-  olh.push({ id: 'c0', tipo: 'cao', x: cx - sT * 7.5, z: cz + 7.5, castelo: 'castelo' });
+  rampas.push({ a: noCastelo(0, 37.5), b: noCastelo(0, 20), w: 2.6, de: 0, para: 1 }, { a: noCastelo(0, 17.5), b: noCastelo(0, 7.5), w: 2.2, de: 1, para: 2 });
+  ocup.push({ x: cx, z: cz, r: 34 }, bocaCastelo);
+  var pC = noCastelo(0, 2.5), pCao = noCastelo(-sT * 7.5, 7.5);
+  desc.push({ id: 'castelo', tipo: 'castelo', nome: 'Castelo de ' + nomeCastelo, x: pC[0], z: pC[1], avistar: 3, observar: 9, detalhe: 'Guarnição grande, muralha de pedra' });
+  olh.push({ id: 'c0', tipo: 'cao', x: pCao[0], z: pCao[1], castelo: 'castelo' });
 
-  // fortaleza rival do outro lado, portão virado para o meio do mapa, ronda em volta (medidas do Corvo-Negro)
-  var gx = lado, F = colocar(22, gx > 0 ? 0.05 : 0.6, gx > 0 ? 0.4 : 0.95, 0.1, 0.4, function (x, z) { return z < rz(x) - 26; });
-  if (!F) return null;
+  // ---- rios: atravessado (leste-oeste, em qualquer altura entre a base e o castelo e às vezes inclinado), vertical (norte-sul)
+  // ou dois (um atravessado com um afluente, ou dois atravessados, o segundo às vezes só até o meio do mapa)
+  function rioNovo(vertical, c, larg) { return { vertical: vertical, c: c, meio: (vertical ? H : W) / 2, incl: rng.range(-0.2, 0.2), amp: rng.range(3, 9), per: rng.range(14, 30), fase: rng.range(0, 6.28), larg: larg, vaus: [] }; }
+  function rioCabe(r) {   // longe da base, do castelo e das saídas das estradas deles; dentro do mapa
+    var tam = r.vertical ? H : W, t0 = r.de !== undefined ? Math.max(0, r.de) : 0, t1 = r.ate !== undefined ? Math.min(tam, r.ate) : tam;
+    for (var t = t0; t <= t1; t += 2) {
+      var p = pontoRio(r, t);
+      if (dist2(p[0], p[1], bx, bz) < 62 * 62 || dist2(p[0], p[1], cx, cz) < 50 * 50 || dist2(p[0], p[1], S1[0], S1[1]) < 18 * 18 || dist2(p[0], p[1], C1[0], C1[1]) < 18 * 18) return false;
+      if ((r.vertical ? p[0] : p[1]) < 10 || (r.vertical ? p[0] > W - 10 : p[1] > H - 10)) return false;
+    }
+    return true;
+  }
+  function sortearRio(f) { for (var n = 0; n < 40; n++) { var r = f(); if (r && rioCabe(r)) return r; } return null; }
+  function atravessado(z0, z1) { return sortearRio(function () { return rioNovo(false, H * rng.range(z0, z1), 3); }); }
+  if (tipoRio === 'atravessado') { var r1 = atravessado(0.36, 0.64); if (!r1) return falhou('rio'); agua.rios.push(r1); }
+  else if (tipoRio === 'vertical') {   // de norte a sul; se não passa longe da base, nasce no norte e acaba antes (num lago)
+    var rv = null;
+    for (var nv = 0; nv < 40 && !rv; nv++) {
+      var r0 = rioNovo(true, W * rng.range(0.15, 0.85), 3); r0.amp *= 0.8;
+      var fim = rng.next() < 0.5 || nv > 10 ? H * rng.range(0.55, 0.78) : undefined;
+      r0.ate = fim === undefined ? undefined : fim + 11;   // confere com a folga do lago da ponta
+      if (rioCabe(r0)) { r0.ate = fim; rv = r0; }
+    }
+    if (!rv) return falhou('rio');
+    agua.rios.push(rv);
+    if (rv.ate !== undefined) agua.lagos.push({ x: Math.round(rioPos(rv, rv.ate)), z: Math.round(rv.ate + 4), r: 7 });
+  }
+  else if (tipoRio === 'dois') {
+    if (rng.next() < 0.5) {   // atravessado com afluente que vem da borda norte ou vai até a borda sul
+      var rp = atravessado(0.4, 0.62); if (!rp) return falhou('rio'); agua.rios.push(rp);
+      var norte = rng.next() < 0.5, af = sortearRio(function () {
+        var r = rioNovo(true, W * rng.range(0.15, 0.85), 2.4), zj = rp.c; r.amp *= 0.6;
+        for (var k = 0; k < 4; k++) zj = rioPos(rp, rioPos(r, zj));   // onde encontra o rio principal
+        if (norte) r.ate = zj; else r.de = zj;
+        return r;
+      });
+      if (!af) return falhou('rio'); agua.rios.push(af);
+    } else {   // dois atravessados, separados; o do sul às vezes só vai de uma borda até o meio
+      var ra = atravessado(0.33, 0.45), rb = ra && sortearRio(function () {
+        var r = rioNovo(false, H * rng.range(0.55, 0.68), 3);
+        if (rng.next() < 0.6) { if (rng.next() < 0.5) r.ate = W * rng.range(0.4, 0.7); else r.de = W * rng.range(0.3, 0.6); }
+        for (var t = 0; t <= W; t += 3) if ((r.de === undefined || t >= r.de - 8) && (r.ate === undefined || t <= r.ate + 8) && Math.abs(rioPos(r, t) - rioPos(ra, t)) < 38) return null;
+        return r;
+      });
+      if (!rb) return falhou('rio'); agua.rios.push(ra, rb);
+    }
+  }
+  // linha que divide o perto (sul) do longe (norte): o rio atravessado mais ao sul, ou o meio do mapa
+  var divisa = agua.rios.filter(function (r) { return !r.vertical && inteiro(r); }).sort(function (a, b) { return b.c - a.c; })[0];
+  function lin(x) { return divisa ? rioPos(divisa, x) : H * 0.5; }
+
+  // ---- fortaleza rival do outro lado, portão virado para o meio do mapa, ronda em volta (medidas do Corvo-Negro)
+  var gx = lado, F = colocar(22, gx > 0 ? 0.05 : 0.55, gx > 0 ? 0.45 : 0.95, 0.08, 0.5, function (x, z) { return z < lin(x) - 26; });
+  if (!F) return falhou('fortaleza');
   var fx = F[0], fz = F[1];
   platos.push({ x: fx, z: fz, r: 11, nivel: 1 }); rampas.push({ a: [fx + 18 * gx, fz + 10], b: [fx + 9 * gx, fz + 5], w: 2, de: 0, para: 1 });
-  ocup.push({ x: fx, z: fz, r: 24 });
+  var oFort = { x: fx, z: fz, r: 24 }; ocup.push(oFort);
   desc.push({ id: 'fortaleza', tipo: 'castelo', nome: 'Fortaleza de ' + nomeRival, x: fx, z: fz, avistar: 3, observar: 8, detalhe: 'Reino rival menor, um portão ao ' + (gx > 0 ? 'leste' : 'oeste') });
   olh.push({ id: 'p2', tipo: 'patrulha', rota: [[fx + 20 * gx, fz + 14], [fx - 12 * gx, fz + 20], [fx - 20 * gx, fz + 4]], castelo: 'fortaleza' });
 
-  // estrada principal: desce da base, cruza o rio na ponte e sobe a rampa do castelo; a ponte tem torre e patrulha
-  var xm = clamp(Math.round(lerp(bx, cx, 0.5) + rng.range(-25, 25)), 30, W - 30), zm = rz(xm), sP = gx;   // o cruzamento e a ronda vão para o lado oposto ao da fortaleza
-  estradas.push([[bx, bz], [bx, bz - 45], [xm, zm + 16], [xm, zm - 16], [cx, cz + 44], [cx, cz + 6]]);
-  var tPonte = torre(xm + (rng.next() < 0.5 ? -9 : 9), Math.round(zm + 32), temRio ? 'Torre da Ponte' : 'Torre da Estrada');
-  var tCastelo = torre(cx + sT * 12.5, cz + 15, 'Torre de ' + nomeCastelo);
-  var tRival = torre(fx + 6 * gx, fz - 4, 'Torre de ' + nomeRival);
-  olh.push({ id: 'p1', tipo: 'patrulha', rota: [[xm - 1, Math.round(zm + 21)], [xm - 1, Math.round(zm - 21)], [xm + sP * 45, Math.round(zm - 30)]], castelo: 'castelo' });
-  ocup.push({ x: xm + sP * 45, z: zm - 30, r: 4 });
-
-  // postos: um ao sul longe da base (com estrada), um no cruzamento ao norte do rio (estrada que segue até uma torre) e um no alto do outro lado
-  var pSul = colocar(5, 0.08, 0.92, 0.5, 0.85, function (x, z) { return z > rz(x) + 25 && dist2(x, z, bx, bz) > 55 * 55; });
-  if (!pSul) return null;
-  postos.push({ id: 'posto1', nome: 'Posto ' + unico(function () { return rng.item(NOMES_MUNDO.lugar); }), x: pSul[0], z: pSul[1] });
-  estradas.push([[bx, bz - 45], pSul]);
-  ocup.push({ x: pSul[0], z: pSul[1], r: 6 });
-  // o cruzamento sai da estrada entre a ponte e o castelo, no primeiro ponto em que o posto cabe
-  for (var t = 0.5, cruz = null; t > 0.05 && !cruz; t -= 0.1) for (var f = 0.5; f >= 0.2 && !cruz; f -= 0.1) {
-    var px = lerp(xm, cx, t), pz = lerp(zm - 16, cz + 44, t), ex = clamp(px + sP * 55, 14, W - 14), q = [Math.round(lerp(px, ex, f)), Math.round(pz)];
-    if (livre(q[0], q[1], 5)) cruz = q;
+  // ---- estrada principal: da base ao castelo, uma ponte em cada rio atravessado (em ponto sorteado) e as curvas que sair
+  var ign0 = [bocaBase, bocaCastelo], rota = [], P = S1, sP = gx;
+  var cruzar = agua.rios.filter(function (r) { return !r.vertical && inteiro(r); }).sort(function (a, b) { return b.c - a.c; });
+  for (var i = 0; i < cruzar.length; i++) {
+    var xt = clamp(lerp(P[0], C1[0], rng.range(0.25, 0.75)) + rng.range(-35, 35), 20, W - 20), pt = ponte(cruzar[i], xt, P, C1, ign0);
+    if (!pt) return falhou('ponte');
+    var e1 = ligarSuave(P, pt.a, ign0); if (!e1) return falhou('estrada');
+    rota = rota.concat(e1.pts, [pt.b]); pontes = pontes.concat(e1.pontes, [pt]); P = pt.b;
   }
-  if (!cruz) return null;
+  var e2 = ligarSuave(P, C1, ign0); if (!e2) return falhou('estrada');
+  rota = rota.concat(e2.pts); pontes = pontes.concat(e2.pontes);
+  var principal = [S0, S1].concat(rota, [C0]);
+  if (!suave(principal.slice(1))) return falhou('estrada');
+  estradas.push(principal);
+  agua.alemDoRio = pontes.length > 0;
+  // a ponte mais perto do castelo tem torre e patrulha (sem ponte: o meio da estrada)
+  var pb = pontes[pontes.length - 1], B, nB;
+  if (pb) { B = pb.B; nB = pb.n; } else {
+    var meio = Math.floor(principal.length / 2), qa = principal[meio - 1], qb = principal[meio], dl = Math.hypot(qb[0] - qa[0], qb[1] - qa[1]) || 1;
+    B = [lerp(qa[0], qb[0], 0.5), lerp(qa[1], qb[1], 0.5)]; nB = [(qb[0] - qa[0]) / dl, (qb[1] - qa[1]) / dl];
+  }
+  var lx = nB[1], lz = -nB[0]; if (lx * sP < 0 || (Math.abs(lx) < 0.2 && rng.next() < 0.5)) { lx = -lx; lz = -lz; }
+  var tPonte = null;
+  for (var k = 0; k < 4 && !tPonte; k++) {
+    var sd = k % 2 ? -1 : 1, dd = k < 2 ? 32 : 24, q = arred([B[0] - nB[0] * dd + lx * sd * 9, B[1] - nB[1] * dd + lz * sd * 9]);
+    if (livre(q[0], q[1], 5, 2)) tPonte = torre(q[0], q[1], pb ? 'Torre da Ponte' : 'Torre da Estrada');
+  }
+  if (!tPonte) return falhou('torre da ponte');
+  var tC = noCastelo(sT * 12.5, 15), tCastelo = torre(tC[0], tC[1], 'Torre de ' + nomeCastelo);
+  var tRival = torre(fx + 6 * gx, fz - 4, 'Torre de ' + nomeRival);
+  var p1a = arred([B[0] - nB[0] * 21, B[1] - nB[1] * 21]), p1b = arred([B[0] + nB[0] * 21, B[1] + nB[1] * 21]), p1c = null;
+  for (var k2 = 0; k2 < 4 && !p1c; k2++) {
+    var s2 = k2 % 2 ? -1 : 1, lg = k2 < 2 ? 45 : 28, c3 = arred([p1b[0] + nB[0] * 9 + lx * s2 * lg, p1b[1] + nB[1] * 9 + lz * s2 * lg]);
+    if (dentro(c3, 8) && seco(p1b, c3) && !pertoDeRio(c3[0], c3[1], 4)) p1c = c3;
+  }
+  if (!p1c) return falhou('patrulha');
+  olh.push({ id: 'p1', tipo: 'patrulha', rota: [p1a, p1b, p1c], castelo: 'castelo' });
+  ocup.push({ x: p1c[0], z: p1c[1], r: 4 });
+
+  // ---- postos: um ao sul longe da base (com estrada), um no cruzamento depois da última ponte (ramal até uma torre) e um no alto
+  var pSul = null;
+  for (var n1 = 0; n1 < 8 && !pSul; n1++) {
+    var cand = colocar(5, 0.08, 0.92, 0.5, 0.88, function (x, z) { return z > lin(x) + 25 && dist2(x, z, bx, bz) > 55 * 55; });
+    if (!cand) break;
+    var oP = { x: cand[0], z: cand[1], r: 6 }, e3 = ligarSuave(S1, cand, [bocaBase, oP]);
+    if (e3) { pSul = cand; estradas.push([S1].concat(e3.pts)); pontes = pontes.concat(e3.pontes); }
+  }
+  if (!pSul) return falhou('posto sul');
+  postos.push({ id: 'posto1', nome: 'Posto ' + unico(function () { return rng.item(NOMES_MUNDO.lugar); }), x: pSul[0], z: pSul[1] });
+  ocup.push({ x: pSul[0], z: pSul[1], r: 6 });
+  // o cruzamento sai da estrada entre a ponte e o castelo, no primeiro ponto em que o ramal e o posto cabem
+  var depois = principal.slice(Math.max(1, pb ? principal.indexOf(pb.b) : Math.floor(principal.length / 2)), principal.length - 1), cruz = null, ramalC = null;
+  for (var fr = 0; fr < 14 && !cruz; fr++) for (var sl = 0; sl < 2 && !cruz; sl++) {
+    var lista = fr < 7 && depois.length > 1 ? depois : principal.slice(1, principal.length - 1);   // não coube depois da ponte: qualquer trecho
+    var ia = Math.min(lista.length - 2, Math.floor(rng.next() * (lista.length - 1))); if (ia < 0) break;
+    var Pa = lista[ia], Pb = lista[ia + 1], u2 = rng.range(0.2, 0.8), Pc = arred([lerp(Pa[0], Pb[0], u2), lerp(Pa[1], Pb[1], u2)]);
+    var dir = (sl ? -sP : sP), ang = rng.range(-0.35, 0.35), len = rng.range(fr < 7 ? 42 : 30, 60);
+    var E = arred([clamp(Pc[0] + dir * Math.cos(ang) * len, 14, W - 14), clamp(Pc[1] + Math.sin(ang) * len, 14, H - 14)]);
+    for (var f2 = 0.5; f2 >= 0.2 && !cruz; f2 -= 0.1) {
+      var qq = arred([lerp(Pc[0], E[0], f2), lerp(Pc[1], E[1], f2)]);
+      if (livre(qq[0], qq[1], 5) && cruza(Pc, E, []) === true) { cruz = qq; ramalC = [Pc, E]; }
+    }
+  }
+  if (!cruz) return falhou('cruzamento');
   postos.push({ id: 'posto2', nome: 'Posto do Cruzamento', x: cruz[0], z: cruz[1] });
   ocup.push({ x: cruz[0], z: cruz[1], r: 6 });
-  estradas.push([[Math.round(px), Math.round(pz)], [Math.round(ex), Math.round(pz)]]);
-  var nTorres = OPCOES_MUNDO.torres[op.torres] !== undefined ? OPCOES_MUNDO.torres[op.torres] : 1;
-  if (nTorres > 0 && livre(ex, pz, 5)) { torre(Math.round(ex), Math.round(pz + 3), 'Torre do ' + (sP > 0 ? 'Leste' : 'Oeste')); nTorres--; }
-  var pAlto = colocar(5, sP > 0 ? 0.06 : 0.6, sP > 0 ? 0.4 : 0.94, 0.15, 0.42, function (x, z) { return z < rz(x) - 20; });
-  if (!pAlto) return null;
-  postos.push({ id: 'posto3', nome: 'Posto do Alto ' + (sP > 0 ? 'Oeste' : 'Leste'), x: pAlto[0], z: pAlto[1] });
-  ocup.push({ x: pAlto[0], z: pAlto[1], r: 6 });
+  estradas.push(ramalC);
+  var nTorres = OPCOES_MUNDO.torres[op.torres] !== undefined ? OPCOES_MUNDO.torres[op.torres] : 1, Ef = ramalC[1];
+  if (nTorres > 0 && livre(Ef[0], Ef[1] + 3, 5, 0)) { torre(Ef[0], Ef[1] + 3, 'Torre do ' + (Ef[0] > W / 2 ? 'Leste' : 'Oeste')); nTorres--; }
+  var pAlto = colocar(5, sP > 0 ? 0.06 : 0.6, sP > 0 ? 0.4 : 0.94, 0.12, 0.45, function (x, z) { return z < lin(x) - 20; });
+  if (!pAlto) return falhou('posto alto');
+  postos.push({ id: 'posto3', nome: 'Posto do Alto ' + (pAlto[0] < W / 2 ? 'Oeste' : 'Leste'), x: pAlto[0], z: pAlto[1] });
+  var oAlto = { x: pAlto[0], z: pAlto[1], r: 6 }; ocup.push(oAlto);
+  if (rng.next() < 0.5) ramal(pAlto, oAlto);
+  if (rng.next() < 0.45) ramal([fx + 18 * gx, fz + 10], oFort);   // estrada velha até o portão da fortaleza
 
-  // mirantes: platô com um degrau a mais no alto e duas rampas, um em cada canto do mapa
+  // ---- mirantes: platô com um degrau a mais no alto e duas rampas, um em cada canto do mapa
   var nMir = esc < 0.95 ? 3 : esc > 1.1 ? 5 : 4, zonas = [[0.05, 0.5, 0.55, 0.92], [0.5, 0.95, 0.55, 0.92], [0.05, 0.5, 0.08, 0.45], [0.5, 0.95, 0.08, 0.45], [0.2, 0.8, 0.3, 0.7]];
-  for (var n = 0; n < nMir; n++) {
-    var zn = zonas[n], feito = false;
+  for (var m = 0; m < nMir; m++) {
+    var zn = zonas[m], feito = false;
     for (var tm = 0; tm < 6 && !feito; tm++) {
       var Q = colocar(18, zn[0], zn[1], zn[2], zn[3], null, 19) || colocar(18, 0, 1, 0, 1, null, 19);   // sem lugar no canto: qualquer lugar
-      if (!Q) return null;
-      var au = rng.range(0, 6.28), ux = Math.sin(au), uz = Math.cos(au), av = au + Math.PI + rng.range(-0.8, 0.8), vx = Math.sin(av), vz = Math.cos(av);
+      if (!Q) return falhou('mirante');
+      var au = rng.range(0, 6.28), mx = Math.sin(au), mz = Math.cos(au), av = au + Math.PI + rng.range(-0.8, 0.8), vx = Math.sin(av), vz = Math.cos(av);
       var a0 = [Math.round((Q[0] + vx * 24) * 2) / 2, Math.round((Q[1] + vz * 24) * 2) / 2];
       if (!livre(a0[0], a0[1], 3)) continue;   // a boca da rampa caiu em lugar ruim: sorteia outro ponto
-      var M = [Math.round((Q[0] + ux * 7.9) * 2) / 2, Math.round((Q[1] + uz * 7.9) * 2) / 2];
+      var M = [Math.round((Q[0] + mx * 7.9) * 2) / 2, Math.round((Q[1] + mz * 7.9) * 2) / 2];
       platos.push({ x: Q[0], z: Q[1], r: 13.8, nivel: 1 }, { x: M[0], z: M[1], r: 6.2, nivel: 2 });
       rampas.push({ a: a0, b: [Q[0] + vx * 12.5, Q[1] + vz * 12.5], w: 2.2, de: 0, para: 1 },
-                  { a: [M[0] - ux * 13, M[1] - uz * 13], b: [M[0] - ux * 5.6, M[1] - uz * 5.6], w: 1.6, de: 1, para: 2 });
+                  { a: [M[0] - mx * 13, M[1] - mz * 13], b: [M[0] - mx * 5.6, M[1] - mz * 5.6], w: 2, de: 1, para: 2 });
       mirantes.push([M[0], M[1], 5]);
       ocup.push({ x: Q[0], z: Q[1], r: 18 }, { x: a0[0], z: a0[1], r: 4 });
       feito = true;
     }
-    if (!feito) return null;
+    if (!feito) return falhou('mirante');
   }
 
-  // lago ao norte (nem todo mundo tem) e vaus no rio, longe da ponte
+  // ---- lago ao norte (nem todo mundo tem) e vaus em cada rio, longe das pontes e de onde um rio encontra o outro
   if (rng.next() < 0.7) {
-    var rl = Math.round(rng.range(10, 13)), lg = colocar(rl + 4, 0.08, 0.92, 0.04, 0.4, function (x, z) { return z < rz(x) - rl - 10; }, rl + 5);
-    if (lg) agua.lagos.push({ x: lg[0], z: lg[1], r: rl });
+    var rl = Math.round(rng.range(10, 13)), lg2 = colocar(rl + 4, 0.08, 0.92, 0.04, 0.4, function (x, z) { return z < lin(x) - rl - 10; }, rl + 5);
+    if (lg2) agua.lagos.push({ x: lg2[0], z: lg2[1], r: rl });
   }
-  if (temRio) for (var v = 0, nv = rng.int(1, 2), tent = 0; v < nv && tent < 50; tent++) {
-    var vxp = Math.round(rng.range(15, W - 15));
-    if (Math.abs(vxp - xm) < 30 || agua.vaus.some(function (q) { return Math.abs(q.x - vxp) < 30; })) continue;
-    agua.vaus.push({ x: vxp, larg: 3.5 }); v++;
-  }
+  agua.rios.forEach(function (r) {
+    var tam = r.vertical ? H : W, t0 = Math.max(15, r.de !== undefined ? r.de + 14 : 0), t1 = Math.min(tam - 15, r.ate !== undefined ? r.ate - 14 : tam);
+    for (var v = 0, nv = inteiro(r) ? rng.int(1, 2) : 1, tent = 0; v < nv && tent < 50; tent++) {
+      var tv = Math.round(rng.range(t0, t1)), pv = pontoRio(r, tv);
+      if (pontes.some(function (p) { return p.rio === r && Math.abs(p.t - tv) < 30; }) || r.vaus.some(function (q) { return Math.abs(q.t - tv) < 30; })) continue;
+      if (agua.rios.some(function (o) { return o !== r && pertoDeRio(pv[0], pv[1], 8, o); })) continue;   // perto do encontro com outro rio
+      r.vaus.push({ t: tv, larg: 3.5 }); v++;
+    }
+  });
 
-  // torres soltas que sobraram, longe da base
+  // ---- torres soltas que sobraram, longe da base
   for (var tt = 0; tt < nTorres; tt++) {
-    var pt = colocar(5, 0.05, 0.95, 0.05, 0.8, function (x, z) { return dist2(x, z, bx, bz) > 60 * 60; });
-    if (pt) torre(pt[0], pt[1], 'Torre ' + unico(function () { return rng.item(NOMES_MUNDO.lugar); }));
+    var pt2 = colocar(5, 0.05, 0.95, 0.05, 0.8, function (x, z) { return dist2(x, z, bx, bz) > 60 * 60; });
+    if (pt2) torre(pt2[0], pt2[1], 'Torre ' + unico(function () { return rng.item(NOMES_MUNDO.lugar); }));
   }
 
-  // locais: 2 de cada recurso (um perto, um longe), 2 vilas, acampamentos espalhados e a ruína no fundo do norte
-  var sul = function (x, z) { return z > rz(x) + 14; }, norte = function (x, z) { return z < rz(x) - 14; };
-  var margem = function (x, z) { return z > rz(x) + 10 && z < rz(x) + 40; };
-  var sitios = [['campo', sul], ['campo', sul], ['bosque', sul], ['bosque', margem], ['pedreira', sul], ['pedreira', norte],
-                ['mina', sul], ['mina', norte], ['vila', sul], ['vila', norte], ['ruina', function (x, z) { return z < H * 0.25; }]];
+  // ---- locais: 2 de cada recurso (um perto, um longe), 2 vilas (às vezes com estrada), acampamentos espalhados e a ruína no norte
+  var sul = function (x, z) { return z > lin(x) + 14; }, nor = function (x, z) { return z < lin(x) - 14; };
+  var margem = function (x, z) { return z > lin(x) + 10 && z < lin(x) + 40; };
+  var sitios = [['campo', sul], ['campo', sul], ['bosque', sul], ['bosque', margem], ['pedreira', sul], ['pedreira', nor],
+                ['mina', sul], ['mina', nor], ['vila', sul], ['vila', nor], ['ruina', function (x, z) { return z < H * 0.25; }]];
   var nAc = OPCOES_MUNDO.acampamentos[op.acampamentos] || 3;
-  for (var k = 0; k < nAc; k++) sitios.push(['acampamento', k % 2 ? norte : sul]);
+  for (var k3 = 0; k3 < nAc; k3++) sitios.push(['acampamento', k3 % 2 ? nor : sul]);
   var recurso = { campo: 'comida', bosque: 'madeira', pedreira: 'pedra', mina: 'ouro' };
   for (var s = 0; s < sitios.length; s++) {
     var cs, tipo = sitios[s][0], p = colocar(8, 0.04, 0.96, 0.04, 0.96, sitios[s][1]);
-    if (!p) return null;
-    ocup.push({ x: p[0], z: p[1], r: 8 });
+    if (!p) return falhou('local');
+    var oS = { x: p[0], z: p[1], r: 8 }; ocup.push(oS);
     var nome = tipo === 'vila' ? 'Vila ' + unico(function () { var v2 = rng.item(NOMES_MUNDO.vila); return (/^(Ribeira|Várzea|Fontela|Azenha)$/.test(v2) ? 'da ' : 'do ') + v2; }) :
       tipo === 'ruina' ? unico(function () { return rng.item(['Ruína de um templo antigo', 'Ruína do mosteiro', 'Ruína da torre velha']); }) :
       unico(function () { return rng.item(NOMES_MUNDO.tipo[tipo]) + ' ' + rng.item(NOMES_MUNDO.lugar); });
     var det = tipo === 'acampamento' ? rng.int(6, 15) + ' homens, ' + (cs = rng.int(0, 2), cs ? cs + (cs === 1 ? ' cão' : ' cães') : 'sem cães') + ', sem cavalos' : rng.item(NOMES_MUNDO.detalhe[tipo]);
     var d = local(tipo, p[0], p[1], nome, det, recurso[tipo] ? { recurso: recurso[tipo] } : null);
     if (tipo === 'acampamento' && d.id !== 'acampamento2') olh.push({ id: 'c' + d.id.slice(-1), tipo: 'cao', x: p[0], z: p[1] });   // cão vigia o 1º e o 3º
+    if (tipo === 'vila' && rng.next() < 0.75) ramal(p, oS);
   }
+  var pg = noCastelo(0, 9);
   return { L: L, A: A, base: base, cavalo: cavalo, descobertas: desc, olheiros: olh, postos: postos, mirantes: mirantes, platos: platos, rampas: rampas,
            estradas: estradas, agua: agua,
-           alvos: { fortaleza: { portao: [fx + 7 * gx, fz + 4], torres: [tRival], patrulha: 'p2' }, castelo: { portao: [cx, cz + 9], torres: [tPonte, tCastelo], patrulha: 'p1' } } };
+           alvos: { fortaleza: { portao: [fx + 7 * gx, fz + 4], torres: [tRival], patrulha: 'p2' }, castelo: { portao: pg, torres: [tPonte, tCastelo], patrulha: 'p1' } } };
 }
 
 // ---- validação: dá para jogar? (mesma regra do caminho(): penhasco, água e, a cavalo, floresta bloqueiam)
@@ -871,7 +1097,7 @@ function novoEstado(seed) {
     seed: seed, fase: 'menu', dia: 1, tempo: 0, influencia: 0, era: 0,
     grade: grade, relevo: gerarRelevo(seed, grade), nevoa: new Uint8Array(L * A), nevoaMudou: true,
     jog: { x: CONFIG.base.x, z: CONFIG.base.z, dirX: 0, dirZ: -1, movendo: false, correndo: false,
-           escondido: false, ruido: 0, y: 0, racao: 0, racaoMax: 0, faminto: false, rota: null, rotaPara: null, vel: 0, visao: CONFIG.visaoDia, alto: 0, olhandoAlto: false, noMirante: false },
+           escondido: false, ruido: 0, y: 0, racao: 0, racaoMax: 0, faminto: false, rota: null, rotaPara: null, preso: 0, vel: 0, visao: CONFIG.visaoDia, alto: 0, olhandoAlto: false, noMirante: false },
     postos: [], baseAtual: -1,
     estoque: estoqueVazio(), reino: { trabalhadores: [], rotas: {}, entregueHoje: estoqueVazio(), roubadoHoje: estoqueVazio(), alertas: {}, cavaleiros: [], batalhas: [] },
     destruidos: {}, guerra: novaGuerra(),
@@ -905,7 +1131,8 @@ function alturaEm(x, z) {
 // um passo curto de (x0,z0) a (x1,z1) é possível? (água e penhasco bloqueiam; a cavalo, floresta também)
 function podePassar(x0, z0, x1, z1, aCavalo) {
   var t = terrenoEm(x1, z1);
-  return TERRENO[t].vel > 0 && !(aCavalo && t === T.FLORESTA) && Math.abs(alturaEm(x1, z1) - alturaEm(x0, z0)) <= CONFIG.degrauMax;
+  var dh = alturaEm(x1, z1) - alturaEm(x0, z0);
+  return TERRENO[t].vel > 0 && !(aCavalo && t === T.FLORESTA) && dh <= CONFIG.degrauMax && dh >= -CONFIG.degrauDescer;
 }
 
 // ---- caminho do tocar-para-ir: busca em largura na grade (8 direções, sem cortar quina)
@@ -929,8 +1156,20 @@ function ligadas(a, b, cav, soMapa) {
   }
   return true;
 }
-function caminho(x0, z0, x1, z1, cav, soMapa) {
+// centro de célula (a dele ou uma vizinha) mais perto a que se chega em linha reta de (x, z), ou -1
+function inicioAlcancavel(x, z, cav) {
+  var L = CONFIG.mapaL, A = CONFIG.mapaA, c = CONFIG.celula, i0 = Math.floor(x / c), j0 = Math.floor(z / c), best = -1, bd = Infinity;
+  for (var dj = -1; dj <= 1; dj++) for (var di = -1; di <= 1; di++) {
+    var i = i0 + di, j = j0 + dj; if (i < 0 || j < 0 || i >= L || j >= A) continue;
+    var cx = (i + 0.5) * c, cz = (j + 0.5) * c, d = dist2(x, z, cx, cz), n = Math.ceil(Math.sqrt(d) / 0.2), px = x, pz = z, ok = d < bd;
+    for (var s = 1; s <= n && ok; s++) { var qx = lerp(x, cx, s / n), qz = lerp(z, cz, s / n); ok = podePassar(px, pz, qx, qz, cav); px = qx; pz = qz; }
+    if (ok) { bd = d; best = j * L + i; }
+  }
+  return best;
+}
+function caminho(x0, z0, x1, z1, cav, soMapa, exato) {
   var L = CONFIG.mapaL, A = CONFIG.mapaA, c = CONFIG.celula, ini = celulaDe(x0, z0), fim = celulaDe(x1, z1);
+  if (exato) { var k0 = inicioAlcancavel(x0, z0, cav); if (k0 >= 0) ini = k0; }
   if (ini < 0) return null;
   var veio = new Int32Array(L * A).fill(-1), fila = [ini], melhor = ini, melhorD = Infinity;
   veio[ini] = ini;
@@ -954,6 +1193,7 @@ function caminho(x0, z0, x1, z1, cav, soMapa) {
   while (k2 !== ini) { pts.push({ x: (k2 % L + 0.5) * c, z: (Math.floor(k2 / L) + 0.5) * c }); k2 = veio[k2]; }
   pts.reverse();
   if (melhor === fim) pts[pts.length - 1] = { x: x1, z: z1 }; // termina no ponto tocado
+  if (exato) return [{ x: (ini % L + 0.5) * c, z: (Math.floor(ini / L) + 0.5) * c }].concat(pts);   // de centro em centro (quem ficou preso)
   // encurta: pula pontos quando a reta até um mais adiante é livre
   var curto = [], de = { x: x0, z: z0 };
   for (var p = 0; p < pts.length; p++) {
@@ -1073,6 +1313,12 @@ function moverBatedor(dt) {
     // desliza na água: tenta cada eixo separado
     if (podePassar(j.x, j.z, nx, j.z, cav.montado)) j.x = nx;
     if (podePassar(j.x, j.z, j.x, nz, cav.montado)) j.z = nz;
+    // seguindo o tocar-para-ir e sem sair do lugar (quina na borda de uma rampa, que o atalho da rota cortou): refaz a rota
+    // célula a célula, sem atalho, a partir do centro da célula atual
+    if (j.rota && ACOES.alvo && Math.hypot(j.x - x0, j.z - z0) < 0.3 * v * dt) {
+      j.preso += dt;
+      if (j.preso > 0.3) { j.preso = 0; j.rota = caminho(j.x, j.z, ACOES.alvo.x, ACOES.alvo.z, cav.montado, false, true) || []; }
+    } else j.preso = 0;
     j.dirX = mx; j.dirZ = mz;
     gastarRacao(Math.hypot(j.x - x0, j.z - z0) * (cav.montado ? CONFIG.racaoCavalo : 1), correr);
     if (cav.montado) { cav.x = j.x; cav.z = j.z; }
@@ -1503,7 +1749,7 @@ function novaGuerra() { return { tomados: {}, ataque: null, tropa: null, noticia
 function descPorId(id) { return DESCOBERTAS.filter(function (x) { return x.id === id; })[0]; }
 // 'Pedra-Alta' de 'Castelo de Pedra-Alta'; o boato diz 'além do rio' só se o mundo tem rio
 function nomeCurto(id) { return descPorId(id).nome.replace(/^(Fortaleza|Castelo) de /, ''); }
-function alemDoRio() { return AGUA.rio ? ', além do rio' : ''; }
+function alemDoRio() { return AGUA.alemDoRio ? ', além do rio' : ''; }
 function olheiroAtivo(o) { return !(o.def.castelo && ESTADO.guerra.tomados[o.def.castelo]); }
 // terras em volta de um castelo tomado ficam em paz: os bandidos não roubam ali
 function emPaz(d) {
@@ -3608,9 +3854,10 @@ function atualizarObjetivos() {
 // ---- mundos salvos e o CRIAR NOVO MUNDO. Índice em the-scout-mundos ({ atual, lista, info }); cada mundo gerado tem o próprio save
 // (the-scout-save-<id>) e o Primeiro mundo continua no the-scout-save de sempre. O tutorial é um só para todos os mundos.
 // Trocar de mundo recarrega a página (o render é montado uma vez); um mundo novo é gerado e validado na carga seguinte.
-var CHAVE_MUNDOS = 'the-scout-mundos';
+var CHAVE_MUNDOS = 'the-scout-mundos', CHAVE_MAPA = 'the-scout-mapa-';   // + id: o mapa pronto do mundo (não muda se o gerador mudar)
 var ROTULOS_OPCAO = { tamanho: { normal: 'Normal', pequeno: 'Pequeno', grande: 'Grande' }, floresta: { normal: 'Normal', pouca: 'Pouca', muita: 'Muita' },
-  torres: { normal: 'Normais', poucas: 'Poucas', muitas: 'Muitas' }, acampamentos: { normal: 'Normais', poucos: 'Poucos', muitos: 'Muitos' }, rio: { sim: 'Com rio', nao: 'Sem rio' } };
+  torres: { normal: 'Normais', poucas: 'Poucas', muitas: 'Muitas' }, acampamentos: { normal: 'Normais', poucos: 'Poucos', muitos: 'Muitos' }, rio: { sorteado: 'Sorteado', atravessado: 'Atravessado (leste-oeste)', vertical: 'De norte a sul', dois: 'Dois rios', nao: 'Sem rio' } };
+var ROTULOS_LISTA = { rio: { atravessado: 'Rio atravessado', vertical: 'Rio de norte a sul' } };   // na lista de mundos, onde o rótulo do menu sozinho confunde
 
 function lerMundos() {
   try { var s = JSON.parse(localStorage.getItem(CHAVE_MUNDOS) || 'null'); if (s && Array.isArray(s.lista)) { s.info = s.info || {}; return s; } } catch (e) { /* índice corrompido */ }
@@ -3618,6 +3865,8 @@ function lerMundos() {
 }
 function gravarMundos(idx) { try { localStorage.setItem(CHAVE_MUNDOS, JSON.stringify(idx)); } catch (e) { /* sem armazenamento */ } }
 function chaveSaveDe(id) { return id === 'primeiro' ? 'the-scout-save' : 'the-scout-save-' + id; }
+function lerMapa(id) { try { return JSON.parse(localStorage.getItem(CHAVE_MAPA + id) || 'null'); } catch (e) { return null; } }
+function guardarMapa(id, m) { try { localStorage.setItem(CHAVE_MAPA + id, JSON.stringify(m)); } catch (e) { /* sem espaço: sai do gerador da mesma versão */ } }
 function opcoesDaUrl() { var o = opcoesPadrao(); Object.keys(o).forEach(function (k) { var v = PARAMS.get(k); if (v && OPCOES_MUNDO[k][v] !== undefined) o[k] = v; }); return o; }
 
 // na partida: monta o mundo escolhido (?mundo=id, o último jogado ou o Primeiro), define CHAVE_SAVE e devolve o ESTADO dele
@@ -3627,7 +3876,10 @@ function abrirMundo() {
     var op = opcoesDaUrl(), sg = gerarMundoValido(parseInt(ger, 10) || 1, op);
     if (sg !== null) { MUNDO = { id: 'gerar', nome: nomeDeMundo(sg), seed: sg, opcoes: op, gerado: true }; CHAVE_SAVE = chaveSaveDe('gerar'); return ESTADO; }
   }
-  var w = idx.lista.filter(function (x) { return x.id === id; })[0];
+  var w = idx.lista.filter(function (x) { return x.id === id; })[0], mapa = w && !w.novo ? lerMapa(w.id) : null;
+  if (w && !w.novo && !mapa && w.gv !== GERADOR_VERSAO) {   // de um gerador antigo e sem o mapa guardado: refeito do zero
+    w.novo = true; w.gv = GERADOR_VERSAO; try { localStorage.removeItem(chaveSaveDe(w.id)); } catch (e) { /* ok */ } delete idx.info[w.id];
+  }
   if (w && w.novo) {   // pedido no menu: gera e valida agora; se nenhuma semente servir, o mundo não entra
     var s = gerarMundoValido(w.seed, w.opcoes);
     if (s === null) {
@@ -3635,10 +3887,10 @@ function abrirMundo() {
       UI.avisoMundo = 'Não deu para montar um mundo completo com essas opções. Tente outras.';
       return abrirMundo();
     }
-    w.seed = s; delete w.novo; gravarMundos(idx);
+    w.seed = s; delete w.novo; gravarMundos(idx); guardarMapa(w.id, montarMundo(s, w.opcoes));
     MUNDO = Object.assign({}, w, { gerado: true }); CHAVE_SAVE = chaveSaveDe(w.id); return ESTADO;
   }
-  if (w) { var m = montarMundo(w.seed, w.opcoes); if (m) { aplicarMundo(m); MUNDO = Object.assign({}, w, { gerado: true }); CHAVE_SAVE = chaveSaveDe(w.id); return novoEstado(w.seed); } }
+  if (w) { var m = mapa || montarMundo(w.seed, w.opcoes); if (m) { if (!mapa) guardarMapa(w.id, m); aplicarMundo(m); MUNDO = Object.assign({}, w, { gerado: true }); CHAVE_SAVE = chaveSaveDe(w.id); return novoEstado(w.seed); } }
   MUNDO = { id: 'primeiro', nome: 'Primeiro mundo', seed: parseInt(PARAMS.get('seed') || '7', 10), gerado: false };
   CHAVE_SAVE = chaveSaveDe('primeiro');
   return novoEstado(MUNDO.seed);
@@ -3656,7 +3908,7 @@ function recarregarMundo() {
 function jogarMundo(id) { var idx = lerMundos(); idx.atual = id; gravarMundos(idx); recarregarMundo(); }
 function apagarMundo(id) {
   var idx = lerMundos(); idx.lista = idx.lista.filter(function (x) { return x.id !== id; }); delete idx.info[id];
-  try { localStorage.removeItem(chaveSaveDe(id)); } catch (e) { /* ok */ }
+  try { localStorage.removeItem(chaveSaveDe(id)); localStorage.removeItem(CHAVE_MAPA + id); } catch (e) { /* ok */ }
   if (idx.atual === id) { idx.atual = 'primeiro'; gravarMundos(idx); recarregarMundo(); return; }
   gravarMundos(idx); listarMundos();
 }
@@ -3670,7 +3922,7 @@ function criarMundoNovo() {
 }
 
 function descricaoMundo(w, info) {
-  var op = w.opcoes ? Object.keys(ROTULOS_OPCAO).filter(function (k) { return w.opcoes[k] && w.opcoes[k] !== opcoesPadrao()[k]; }).map(function (k) { return ROTULOS_OPCAO[k][w.opcoes[k]]; }) : [];
+  var op = w.opcoes ? Object.keys(ROTULOS_OPCAO).filter(function (k) { return w.opcoes[k] && w.opcoes[k] !== opcoesPadrao()[k] && ROTULOS_OPCAO[k][w.opcoes[k]]; }).map(function (k) { return (ROTULOS_LISTA[k] || {})[w.opcoes[k]] || ROTULOS_OPCAO[k][w.opcoes[k]]; }) : [];
   return (info ? 'Dia ' + info.dia + ' · ' + CONFIG.eras[info.era || 0].nome + (info.fim ? ' · conquistado' : '') : 'Ainda não jogado') +
     (w.id === 'primeiro' ? ' · feito à mão' : ' · semente ' + w.seed) + (op.length ? ' · ' + op.join(', ') : '');
 }
