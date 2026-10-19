@@ -123,13 +123,11 @@
   <div id="mapa" class="oculto"><div id="mapaCaixa">
     <canvas id="mapaCanvas"></canvas>
     <p id="mapaEstoque"></p>
-    <p><b>Tinta</b>: relatado · <b style="color:#666">Lápis</b>: visto, falta relatar · B: base · P: posto · quadrados: recursos (Comida, Madeira, Pedra, Ouro) e suas rotas · seta vermelha: lado de onde vieram bandidos · azul: cavaleiros e rotas escoltadas · A acampamento · V vila · T torre · C castelo · R ruína · toque para fechar</p>
+    <p><b>Colorido</b>: anexado ao mapa · <b style="color:#666">Cinza</b>: no caderno, falta anexar · B: seu castelo · P: posto · quadrados: recursos (Comida, Madeira, Pedra, Ouro) e suas rotas · seta vermelha: lado de onde vieram bandidos · azul: cavaleiros e rotas escoltadas · A acampamento · V vila · T torre de vigia · C castelo ou fortaleza · R templo · toque para fechar</p>
   </div></div>
 
   <div id="menu" class="tela"><div class="cartao">
     <h1>The Scout</h1>
-    <p>Você é o batedor do reino. Revele o mapa, anote o que encontrar e <b>volte para a base</b> antes do anoitecer. Só o que chega em casa vira mapa.</p>
-    <p><small>Arraste em qualquer lugar para andar (arraste mais longe para correr, que faz barulho). Toque num ponto para ir até lá; toque duas vezes para correr. Parar no mato esconde você. Perto do cavalo, toque em Montar: ele é rápido e gasta menos ração, mas faz barulho, não entra na floresta e fica onde você o deixar. O que você relata vira trabalho para o reino: campos, bosques, pedreiras e minas enchem o estoque da cidade. Com influência e recursos o reino avança de era: a Feudal traz o cavalo, a dos Castelos traz o pássaro, e cada era deixa fundar postos avançados, que viram bases. Uma vez por expedição, o pássaro leva suas anotações para casa e libera o caderno. Em colinas, segure o botão para olhar longe. Fique parado perto de algo para observar os detalhes. A ração limita até onde você vai; o reino manda mais conforme cresce.</small></p>
     <p class="mundoAtual">Mundo: <b id="menuMundo"></b></p>
     <p id="menuAviso" class="falta oculto"></p>
     <button id="btnComecar" class="botao">Começar</button>
@@ -139,7 +137,7 @@
   </div></div>
 
   <div id="relatorio" class="tela oculto"><div class="cartao">
-    <h2>Relatório ao reino</h2>
+    <h2>Caderno anexado ao mapa</h2>
     <p id="relEra" class="eraNova"></p>
     <ul id="relLista"></ul>
     <p id="relResumo"></p>
@@ -151,7 +149,7 @@
   <div id="vitoria" class="tela oculto"><div class="cartao">
     <h2 id="vitTitulo">Pedra-Alta caiu!</h2>
     <p id="vitTexto"></p>
-    <button id="btnVitoria" class="botao">Ver o relatório</button>
+    <button id="btnVitoria" class="botao">Continuar</button>
     <button id="btnProximoMundo" class="botao secundario">Criar o próximo mundo</button>
   </div></div>
 
@@ -202,7 +200,7 @@
     <label class="ajuste">Torres <select id="mn_torres"></select></label>
     <label class="ajuste">Acampamentos <select id="mn_acampamentos"></select></label>
     <label class="ajuste">Rio <select id="mn_rio"></select></label>
-    <p><small>Todo mundo tem base, rio com ponte e vau (se tiver rio), mirantes, postos, dois locais de cada recurso, bandidos, uma fortaleza rival e o castelo final. A mesma semente com as mesmas opções dá sempre o mesmo mundo.</small></p>
+    <p><small>Todo mundo tem o seu castelo, rio com ponte e vau (se tiver rio), mirantes, postos, dois locais de cada recurso, bandidos, uma fortaleza rival e o castelo final. A mesma semente com as mesmas opções dá sempre o mesmo mundo.</small></p>
     <button id="btnCriarMundo" class="botao">CRIAR NOVO MUNDO</button>
     <p id="mnMsg"></p>
     <button id="btnFecharMundos" class="botao secundario">Voltar</button>
@@ -285,7 +283,7 @@ var CONFIG = {
            nomeTrabalhador: { comida: 'fazendeiro', madeira: 'lenhador', pedra: 'minerador', ouro: 'minerador' },
            // dica do rei na saída: pede um local de cada, na ordem do custo das eras (o mais perto da cidade); com todos relatados, volta ao boato do castelo
            pedidoRei: ['comida', 'madeira', 'pedra', 'ouro'],
-           pistaRecurso: { comida: 'terra boa para plantar', pedra: 'pedra boa para tirar', madeira: 'madeira boa para cortar', ouro: 'um veio de ouro' } },
+           pistaRecurso: { comida: 'um campo de trigo', pedra: 'um depósito mineral', madeira: 'um bosque', ouro: 'um depósito de ouro' } },
 
   // mercado do reino (automático, no relatório): troca o que sobra além do custo da próxima era pelo que falta para ela,
   // só se a fonte do recurso em falta já foi relatada. `taxa` de sobra por 1 do que falta, até `limite` de cada recurso por relatório
@@ -319,16 +317,15 @@ var CONFIG = {
           letraTipo: { acampamento: 'A', vila: 'V', mina: 'M', torre: 'T', castelo: 'C', ruina: 'R' } },
 
   // tutorial da primeira expedição (52_tutorial.js): sem tempo, cada passo espera a ação do jogador
-  // espera: andar (anda `andar` unidades), correr (corre `correr` s), avistar (1º lugar no caderno), tinta (esse lugar a tinta; mostra `balao` sobre ele), base (entrega o relatório)
-  // dica da torre: fora da fila, aparece quando uma torre ou patrulha fica a menos de `torrePerto` e some ao se esconder `torreEsconde` s ou se afastar além de `torreLonge`
-  tutorial: { andar: 3, correr: 1, torrePerto: 20, torreEsconde: 0.6, torreLonge: 30, passos: [
-    { espera: 'andar', texto: '<b>Arraste</b> em qualquer lugar para andar.' },
-    { espera: 'correr', texto: 'Arraste <b>mais longe</b> para correr.<br>É rápido, mas faz barulho e gasta mais ração.' },
-    { espera: 'avistar', texto: 'A <b>névoa</b> esconde o reino.<br>Ande até ela para descobrir o que tem lá.' },
-    { espera: 'tinta', texto: 'Ficou <b>a lápis</b>, só um esboço.<br><b>Pare perto</b> dele para passar a tinta.',
-      balao: '<b>Por que anotar?</b> O rei não conhece estas terras. O que você anota vira o mapa do reino, e é com ele que o rei manda trabalhadores e soldados.' },
-    { espera: 'base', texto: 'Agora <b>volte à base</b> e entregue o caderno ao rei. Só o que chega em casa vira mapa: se te pegarem, você perde tudo o que está a lápis.<br>Fique de olho na <b>ração</b> e no céu. Quando escurece você enxerga menos, e quem estiver fora da base no fim do dia é capturado.' } ],
-    torre: '<b>Torres e patrulhas</b> veem no cone.<br>Desvie, ou fique <b>parado no mato</b> para se esconder.' },
+  // espera: andar (anda `andar` unidades), correr (corre `correr` s), avistar (1º lugar no caderno), tinta (observar esse lugar; mostra `balao` sobre ele), base (anexa o caderno ao mapa)
+  // {achado} vira o nome do primeiro lugar encontrado, com artigo ("a Vila de Ribeira"); {ele} vira ele/ela
+  tutorial: { andar: 3, correr: 1, passos: [
+    { espera: 'andar', texto: 'Arraste o dedo pela tela para começar a andar.' },
+    { espera: 'correr', texto: 'Quer ir mais rápido? Arraste <b>até a borda</b> para correr. Só lembre que correr faz mais barulho e consome ração.' },
+    { espera: 'avistar', texto: 'Lá na frente, a <b>névoa</b> cobre as terras que o reino ainda não conhece. Atravesse-a para desbravá-la.' },
+    { espera: 'tinta', texto: 'Olha só: {achado}. O nome já foi para o seu caderno. Fique um pouco por perto para descobrir mais sobre {ele}.',
+      balao: 'Ninguém no reino conhece estas terras. Cada coisa que você anota vira um pedaço do mapa do rei.' },
+    { espera: 'base', texto: 'Seu caderno já tem o que contar. <b>Volte ao castelo</b> para anexá-lo ao mapa do reino. Mas cuidado: se você for pego, seu caderno será perdido.' } ] },
 
   // base
   base: { x: 90, z: 258, raio: 9 },
@@ -391,6 +388,12 @@ function angDif(a, b) { var d = a - b; while (d > Math.PI) d -= 2 * Math.PI; whi
 var PARAMS = new URLSearchParams(location.search);
 var DEBUG = PARAMS.has('debug');
 
+// ---- artigo dos nomes de lugar no texto ("a Vila de Ribeira", "perto do Bosque do Leste")
+var FEMININOS = /^(Vila|Torre|Fortaleza|Ruína|Borda|Lavoura|Mina)\b/;
+function feminino(nome) { return FEMININOS.test(nome); }
+function comArtigo(nome) { return (feminino(nome) ? 'a ' : 'o ') + nome; }
+function deArtigo(nome) { return (feminino(nome) ? 'da ' : 'do ') + nome; }
+
 // ===== 10_conteudo.js
 // ---- terreno: tipos e regras
 var T = { CAMPO: 0, MATO: 1, FLORESTA: 2, AGUA: 3, ESTRADA: 4, COLINA: 5, VAU: 6 };
@@ -407,29 +410,29 @@ var TERRENO = [
 
 // ---- descobertas (fixas; mapa 1,5x maior desde 2026-10-18, com mais recursos, acampamentos e reinos a conquistar)
 var DESCOBERTAS = [
-  { id: 'acamp', tipo: 'acampamento', nome: 'Acampamento de saqueadores', x: 45.5, z: 191.5, avistar: 1, observar: 4, detalhe: '12 homens, 2 cães, sem cavalos' },
+  { id: 'acamp', tipo: 'acampamento', nome: 'Acampamento de bandidos', x: 45.5, z: 191.5, avistar: 1, observar: 4, detalhe: '12 homens, 2 cães, sem cavalos' },
   { id: 'vila',  tipo: 'vila',        nome: 'Vila de Ribeira',            x: 138, z: 180, avistar: 1, observar: 3, detalhe: 'Amigável, planta trigo, aceita comércio' },
-  { id: 'mina',  tipo: 'mina',        nome: 'Veio de ouro',                x: 24, z: 150, avistar: 2, observar: 6, detalhe: 'Ouro na encosta, sem guarda', recurso: 'ouro' },
+  { id: 'mina',  tipo: 'mina',        nome: 'Depósito de ouro',                x: 24, z: 150, avistar: 2, observar: 6, detalhe: 'Ouro na encosta, sem guarda', recurso: 'ouro' },
   // locais de recurso: depois de relatados, o reino manda trabalhadores (1 se avistado, 2 se observado)
-  { id: 'campo', tipo: 'campo',       nome: 'Campo fértil do Oeste',      x: 30, z: 240, avistar: 1, observar: 2, detalhe: 'Terra boa para trigo, perto do rio', recurso: 'comida' },
-  { id: 'bosque', tipo: 'bosque',     nome: 'Borda do Bosque Leste',      x: 147, z: 243, avistar: 1, observar: 2, detalhe: 'Madeira boa e fácil de tirar', recurso: 'madeira' },
-  { id: 'pedreira', tipo: 'pedreira', nome: 'Pedreira do Penhasco',       x: 23, z: 191.5, avistar: 1, observar: 3, detalhe: 'Pedra solta no alto do penhasco', recurso: 'pedra' },
-  { id: 'torre1', tipo: 'torre',      nome: 'Torre do Vau',                x: 99, z: 150, avistar: 1, observar: 3, detalhe: 'Um vigia, sino de alarme' },
-  { id: 'torre2', tipo: 'torre',      nome: 'Torre do Leste',              x: 147, z: 93,  avistar: 1, observar: 3, detalhe: 'Dois vigias, olha para a estrada' },
+  { id: 'campo', tipo: 'campo',       nome: 'Campo de trigo do Oeste',      x: 30, z: 240, avistar: 1, observar: 2, detalhe: 'Terra boa para trigo, perto do rio', recurso: 'comida' },
+  { id: 'bosque', tipo: 'bosque',     nome: 'Bosque do Leste',      x: 147, z: 243, avistar: 1, observar: 2, detalhe: 'Madeira boa e fácil de tirar', recurso: 'madeira' },
+  { id: 'pedreira', tipo: 'pedreira', nome: 'Depósito mineral do Penhasco',       x: 23, z: 191.5, avistar: 1, observar: 3, detalhe: 'Pedra solta no alto do penhasco', recurso: 'pedra' },
+  { id: 'torre1', tipo: 'torre',      nome: 'Torre de Vigia do Vau',                x: 99, z: 150, avistar: 1, observar: 3, detalhe: 'Um vigia, sino de alarme' },
+  { id: 'torre2', tipo: 'torre',      nome: 'Torre de Vigia do Leste',              x: 147, z: 93,  avistar: 1, observar: 3, detalhe: 'Dois vigias, olha para a estrada' },
   { id: 'castelo', tipo: 'castelo',   nome: 'Castelo de Pedra-Alta',       x: 90, z: 44.5, avistar: 3, observar: 9, detalhe: 'Guarnição grande, muralha de pedra' },
-  { id: 'ruina', tipo: 'ruina',       nome: 'Ruína de um templo antigo',   x: 20.5, z: 32.5, avistar: 3, observar: 10, detalhe: 'Relíquia no altar (rara)' },
+  { id: 'ruina', tipo: 'ruina',       nome: 'Templo antigo',   x: 20.5, z: 32.5, avistar: 3, observar: 10, detalhe: 'Relíquia no altar (rara)' },
   // novas áreas do mapa maior (GDD: mais recursos, bandidos e reinos a conquistar)
-  { id: 'campo2', tipo: 'campo',      nome: 'Trigal da Várzea',            x: 66, z: 222, avistar: 1, observar: 2, detalhe: 'Trigal grande a meio caminho do acampamento', recurso: 'comida' },
+  { id: 'campo2', tipo: 'campo',      nome: 'Campo de trigo da Várzea',            x: 66, z: 222, avistar: 1, observar: 2, detalhe: 'Trigal grande a meio caminho do acampamento', recurso: 'comida' },
   { id: 'bosque2', tipo: 'bosque',    nome: 'Bosque do Rio',               x: 60, z: 138, avistar: 1, observar: 2, detalhe: 'Carvalhos velhos na margem sul do rio', recurso: 'madeira' },
-  { id: 'pedreira2', tipo: 'pedreira', nome: 'Pedreira do Rochedo',        x: 162, z: 74, avistar: 1, observar: 3, detalhe: 'Granito no alto do rochedo do leste', recurso: 'pedra' },
-  { id: 'mina2', tipo: 'mina',        nome: 'Veio de ouro do Lago',        x: 164, z: 14, avistar: 2, observar: 6, detalhe: 'Ouro rico, longe e perto de bandidos', recurso: 'ouro' },
-  { id: 'acamp2', tipo: 'acampamento', nome: 'Acampamento da Mata',        x: 168, z: 222, avistar: 1, observar: 4, detalhe: '8 homens escondidos perto do bosque' },
+  { id: 'pedreira2', tipo: 'pedreira', nome: 'Depósito mineral do Rochedo',        x: 162, z: 74, avistar: 1, observar: 3, detalhe: 'Granito no alto do rochedo do leste', recurso: 'pedra' },
+  { id: 'mina2', tipo: 'mina',        nome: 'Depósito de ouro do Lago',        x: 164, z: 14, avistar: 2, observar: 6, detalhe: 'Ouro rico, longe e perto de bandidos', recurso: 'ouro' },
+  { id: 'acamp2', tipo: 'acampamento', nome: 'Acampamento do Bosque',        x: 168, z: 222, avistar: 1, observar: 4, detalhe: '8 homens escondidos perto do bosque' },
   { id: 'acamp3', tipo: 'acampamento', nome: 'Acampamento do Norte',       x: 128, z: 16, avistar: 1, observar: 4, detalhe: '15 homens, 1 cão, vigiam o lago' },
   { id: 'vila2', tipo: 'vila',        nome: 'Vila do Moinho',              x: 16, z: 108, avistar: 1, observar: 3, detalhe: 'Amigável, moinho no vau velho' },
   { id: 'fortaleza', tipo: 'castelo', nome: 'Fortaleza de Corvo-Negro',    x: 42, z: 56, avistar: 3, observar: 8, detalhe: 'Reino rival menor, um portão ao leste' },
   // torres dos castelos rivais: observá-las conta no plano de batalha (o modelo é o do olheiro)
-  { id: 'torre3', tipo: 'torre',      nome: 'Torre de Pedra-Alta',         x: 77.5, z: 57, avistar: 1, observar: 3, detalhe: 'Arqueiros e sino que avisa o castelo' },
-  { id: 'torre4', tipo: 'torre',      nome: 'Torre de Corvo-Negro',        x: 48, z: 52, avistar: 1, observar: 3, detalhe: 'Um vigia sobre o portão leste' },
+  { id: 'torre3', tipo: 'torre',      nome: 'Torre de Vigia de Pedra-Alta',         x: 77.5, z: 57, avistar: 1, observar: 3, detalhe: 'Arqueiros e sino que avisa o castelo' },
+  { id: 'torre4', tipo: 'torre',      nome: 'Torre de Vigia de Corvo-Negro',        x: 48, z: 52, avistar: 1, observar: 3, detalhe: 'Um vigia sobre o portão leste' },
 ];
 
 // ---- olheiros (castelo: id do castelo a que servem; param de vigiar quando ele é tomado)
@@ -633,6 +636,8 @@ var NOMES_MUNDO = {
   lugar: ['do Rio', 'do Penhasco', 'da Várzea', 'do Vale', 'da Colina', 'da Encosta', 'do Ermo', 'da Charneca', 'do Barranco', 'da Lagoa', 'do Outeiro', 'da Serra'],
   tipo: { campo: ['Campo fértil', 'Trigal', 'Lavoura'], bosque: ['Bosque', 'Mata', 'Carvalhal'], pedreira: ['Pedreira', 'Lajedo'],
           mina: ['Veio de ouro', 'Mina de ouro'], acampamento: ['Acampamento', 'Covil', 'Esconderijo'] },
+  // nome que o jogador lê (termos do Pedro, 2026-10-19). O sorteio continua em `tipo` para a mesma semente dar o mesmo mundo
+  nomeTipo: { campo: 'Campo de trigo', bosque: 'Bosque', pedreira: 'Depósito mineral', mina: 'Depósito de ouro', acampamento: 'Acampamento' },
   detalhe: { campo: ['Terra boa para trigo', 'Trigal grande e bem regado', 'Terra preta, boa de plantar'],
              bosque: ['Madeira boa e fácil de tirar', 'Carvalhos velhos e retos', 'Pinheiros altos perto da trilha'],
              pedreira: ['Pedra solta, fácil de cortar', 'Granito bom para muralha', 'Laje firme na encosta'],
@@ -701,6 +706,16 @@ function montarMundo(seed, op) {
     return null;
   }
   function unico(f) { for (var n = 0; n < 20; n++) { var s = f(); if (!usados[s]) { usados[s] = 1; return s; } } var k = 2; while (usados[s + ' ' + k]) k++; usados[s + ' ' + k] = 1; return s + ' ' + k; }
+  // troca o tipo sorteado pelo nome do glossário ("Trigal do Vale" vira "Campo de trigo do Vale"); se repetir, outro lugar, sem gastar o RNG
+  var lidos = {};
+  function nomeLido(tipo, sorteado) {
+    var m = / (d[oa] \S+)( \d+)?$/.exec(sorteado), lugares = NOMES_MUNDO.lugar, i0 = m ? lugares.indexOf(m[1]) : -1;
+    for (var k = 0; k < lugares.length; k++) {
+      var n = NOMES_MUNDO.nomeTipo[tipo] + ' ' + lugares[(Math.max(0, i0) + k) % lugares.length];
+      if (!lidos[n]) { lidos[n] = 1; return n; }
+    }
+    return sorteado;
+  }
   function local(tipo, x, z, nome, detalhe, extra) {
     var v = VALOR_LOCAL[tipo] || [3, 8], d = Object.assign({ id: tipo + (desc.filter(function (q) { return q.tipo === tipo; }).length + 1), tipo: tipo, nome: nome, x: x, z: z, avistar: v[0], observar: v[1], detalhe: detalhe }, extra || {});
     desc.push(d); return d;
@@ -909,11 +924,11 @@ function montarMundo(seed, op) {
   var tPonte = null;
   for (var k = 0; k < 4 && !tPonte; k++) {
     var sd = k % 2 ? -1 : 1, dd = k < 2 ? 32 : 24, q = arred([B[0] - nB[0] * dd + lx * sd * 9, B[1] - nB[1] * dd + lz * sd * 9]);
-    if (livre(q[0], q[1], 5, 2)) tPonte = torre(q[0], q[1], pb ? 'Torre da Ponte' : 'Torre da Estrada');
+    if (livre(q[0], q[1], 5, 2)) tPonte = torre(q[0], q[1], pb ? 'Torre de Vigia da Ponte' : 'Torre de Vigia da Estrada');
   }
   if (!tPonte) return falhou('torre da ponte');
-  var tC = noCastelo(sT * 12.5, 15), tCastelo = torre(tC[0], tC[1], 'Torre de ' + nomeCastelo);
-  var tRival = torre(fx + 6 * gx, fz - 4, 'Torre de ' + nomeRival);
+  var tC = noCastelo(sT * 12.5, 15), tCastelo = torre(tC[0], tC[1], 'Torre de Vigia de ' + nomeCastelo);
+  var tRival = torre(fx + 6 * gx, fz - 4, 'Torre de Vigia de ' + nomeRival);
   var p1a = arred([B[0] - nB[0] * 21, B[1] - nB[1] * 21]), p1b = arred([B[0] + nB[0] * 21, B[1] + nB[1] * 21]), p1c = null;
   for (var k2 = 0; k2 < 4 && !p1c; k2++) {
     var s2 = k2 % 2 ? -1 : 1, lg = k2 < 2 ? 45 : 28, c3 = arred([p1b[0] + nB[0] * 9 + lx * s2 * lg, p1b[1] + nB[1] * 9 + lz * s2 * lg]);
@@ -952,7 +967,7 @@ function montarMundo(seed, op) {
   ocup.push({ x: cruz[0], z: cruz[1], r: 6 });
   estradas.push(ramalC);
   var nTorres = OPCOES_MUNDO.torres[op.torres] !== undefined ? OPCOES_MUNDO.torres[op.torres] : 1, Ef = ramalC[1];
-  if (nTorres > 0 && livre(Ef[0], Ef[1] + 3, 5, 0)) { torre(Ef[0], Ef[1] + 3, 'Torre do ' + (Ef[0] > W / 2 ? 'Leste' : 'Oeste')); nTorres--; }
+  if (nTorres > 0 && livre(Ef[0], Ef[1] + 3, 5, 0)) { torre(Ef[0], Ef[1] + 3, 'Torre de Vigia do ' + (Ef[0] > W / 2 ? 'Leste' : 'Oeste')); nTorres--; }
   var pAlto = colocar(5, sP > 0 ? 0.06 : 0.6, sP > 0 ? 0.4 : 0.94, 0.12, 0.45, function (x, z) { return z < lin(x) - 20; });
   if (!pAlto) return falhou('posto alto');
   postos.push({ id: 'posto3', nome: 'Posto do Alto ' + (pAlto[0] < W / 2 ? 'Oeste' : 'Leste'), x: pAlto[0], z: pAlto[1] });
@@ -999,7 +1014,7 @@ function montarMundo(seed, op) {
   // ---- torres soltas que sobraram, longe da base
   for (var tt = 0; tt < nTorres; tt++) {
     var pt2 = colocar(5, 0.05, 0.95, 0.05, 0.8, function (x, z) { return dist2(x, z, bx, bz) > 60 * 60; });
-    if (pt2) torre(pt2[0], pt2[1], 'Torre ' + unico(function () { return rng.item(NOMES_MUNDO.lugar); }));
+    if (pt2) torre(pt2[0], pt2[1], 'Torre de Vigia ' + unico(function () { return rng.item(NOMES_MUNDO.lugar); }));
   }
 
   // ---- locais: 2 de cada recurso (um perto, um longe), 2 vilas (às vezes com estrada), acampamentos espalhados e a ruína no norte
@@ -1015,8 +1030,8 @@ function montarMundo(seed, op) {
     if (!p) return falhou('local');
     var oS = { x: p[0], z: p[1], r: 8 }; ocup.push(oS);
     var nome = tipo === 'vila' ? 'Vila ' + unico(function () { var v2 = rng.item(NOMES_MUNDO.vila); return (/^(Ribeira|Várzea|Fontela|Azenha)$/.test(v2) ? 'da ' : 'do ') + v2; }) :
-      tipo === 'ruina' ? unico(function () { return rng.item(['Ruína de um templo antigo', 'Ruína do mosteiro', 'Ruína da torre velha']); }) :
-      unico(function () { return rng.item(NOMES_MUNDO.tipo[tipo]) + ' ' + rng.item(NOMES_MUNDO.lugar); });
+      tipo === 'ruina' ? unico(function () { return rng.item(['Templo antigo', 'Templo do mosteiro', 'Templo esquecido']); }) :
+      nomeLido(tipo, unico(function () { return rng.item(NOMES_MUNDO.tipo[tipo]) + ' ' + rng.item(NOMES_MUNDO.lugar); }));
     var det = tipo === 'acampamento' ? rng.int(6, 15) + ' homens, ' + (cs = rng.int(0, 2), cs ? cs + (cs === 1 ? ' cão' : ' cães') : 'sem cães') + ', sem cavalos' : rng.item(NOMES_MUNDO.detalhe[tipo]);
     var d = local(tipo, p[0], p[1], nome, det, recurso[tipo] ? { recurso: recurso[tipo] } : null);
     if (tipo === 'acampamento' && d.id !== 'acampamento2') olh.push({ id: 'c' + d.id.slice(-1), tipo: 'cao', x: p[0], z: p[1] });   // cão vigia o 1º e o 3º
@@ -1488,7 +1503,7 @@ function relatar() {
   r.trocas = trocarNoMercado();
   avancarEra();
   ESTADO.baseAtual = baseEm(j.x, j.z);   // a próxima expedição sai desta base
-  r.base = ESTADO.baseAtual < 0 ? 'a base' : LOCAIS_POSTO[ESTADO.baseAtual].nome;
+  r.base = ESTADO.baseAtual < 0 ? 'no castelo' : 'no ' + LOCAIS_POSTO[ESTADO.baseAtual].nome;
   if (p.carga) {   // o relatório do dia inclui o que o pássaro levou
     r.itens = p.carga.itens.map(function (i) { return Object.assign({}, i, { passaro: true }); }).concat(r.itens);
     r.celulas += p.carga.celulas; r.ganho += p.carga.ganho;
@@ -1779,11 +1794,11 @@ function pontosGuerra(id) {
   var pat = OLHEIROS.filter(function (o) { return o.id === a.patrulha; })[0];
   var torresOk = a.torres.every(function (t) { return ESTADO.relatados[t] === 2; });
   return [
-    { id: 'portao', nome: 'Portão mapeado a tinta', efeito: 'o ataque vai pelo ponto fraco', ok: ESTADO.nevoa[kp] === 2, parte: P.portao },
+    { id: 'portao', nome: 'Portão no mapa', efeito: 'o ataque vai pelo ponto fraco', ok: ESTADO.nevoa[kp] === 2, parte: P.portao },
     { id: 'torres', nome: 'Torres observadas (' + a.torres.map(function (t) { return descPorId(t).nome; }).join(', ') + ')', efeito: 'arqueiros e sino neutralizados', ok: torresOk, parte: P.torres,
       n: a.torres.filter(function (t) { return ESTADO.relatados[t] === 2; }).length, de: a.torres.length },
-    { id: 'patrulha', nome: 'Rota da patrulha a tinta', efeito: 'surpresa na troca de guarda', ok: fracaoATinta(pat.rota) >= CONFIG.guerra.tinta, parte: P.patrulha },
-    { id: 'caminho', nome: 'Caminho a tinta da base até o portão', efeito: 'a tropa chega inteira', ok: !!rotaPortao(id, true), parte: P.caminho },
+    { id: 'patrulha', nome: 'Rota da patrulha no mapa', efeito: 'surpresa na troca de guarda', ok: fracaoATinta(pat.rota) >= CONFIG.guerra.tinta, parte: P.patrulha },
+    { id: 'caminho', nome: 'Caminho no mapa do castelo até o portão', efeito: 'a tropa chega inteira', ok: !!rotaPortao(id, true), parte: P.caminho },
     { id: 'guarnicao', nome: 'Guarnição observada de perto', efeito: 'o reino manda o exército do tamanho certo', ok: ESTADO.relatados[id] === 2, parte: P.guarnicao },
   ];
 }
@@ -1878,13 +1893,13 @@ function pedidoDoRei() {
 function avisosSaida() {
   var av = [], at = ESTADO.guerra.ataque, b = CONFIG.base;
   var pede = pedidoDoRei();
-  if (pede) av.push('O rei precisa de ' + pede.recurso + '. Dizem que há ' + CONFIG.reino.pistaRecurso[pede.recurso] + ' ao ' + direcaoDe(b, pede.local) + ' da cidade.');
-  else if (!ESTADO.relatados.castelo) av.push('O rei ouviu um boato: o reino rival fica ao ' + direcaoDe(b, descPorId('castelo')) + alemDoRio() + '.');
+  if (pede) av.push('O rei precisa de ' + pede.recurso + '. Dizem que há ' + CONFIG.reino.pistaRecurso[pede.recurso] + ' ao ' + direcaoDe(b, pede.local) + ' do castelo.');
+  else if (!ESTADO.relatados.castelo) av.push('O rei ouviu um boato: o reino de ' + nomeCurto('castelo') + ' fica ao ' + direcaoDe(b, descPorId('castelo')) + alemDoRio() + '.');
   if (ESTADO.guerra.tropa) av.push('A batalha será hoje: o exército marcha contra ' + descPorId(at.alvo).nome + '. Dá para assistir do alto de um mirante.');
   var al = ESTADO.reino.alertas;
   Object.keys(al).forEach(function (id) {
     if (ESTADO.relatados[al[id].campo] || ESTADO.destruidos[al[id].campo]) return;
-    av.push('Bandidos roubaram perto de ' + descPorId(id).nome + '. Vieram do ' + al[id].dir + ' de lá.');
+    av.push('Bandidos roubaram perto ' + deArtigo(descPorId(id).nome) + '. Vieram do ' + al[id].dir + ' de lá.');
   });
   return av;
 }
@@ -3269,14 +3284,14 @@ function criarUI() {
     if (performance.now() < UI.cheioAte) return;
     UI.cheioAte = performance.now() + 4000; toast('Caderno cheio. Hora de voltar.');
   });
-  on('fundou', function (e) { som('tinta'); vibrar([30, 30, 60]); toast(e.p.nome + ' fundado. Agora ele é uma base.'); });
-  on('passaro', function (e) { som('tinta'); vibrar(20); var n = e.carga.itens.length; toast('O pássaro levou ' + n + (n === 1 ? ' anotação' : ' anotações') + ' e ' + e.carga.celulas + ' trechos de mapa. Influência +' + e.carga.ganho + '.'); });
+  on('fundou', function (e) { som('tinta'); vibrar([30, 30, 60]); toast(e.p.nome + ' fundado. Agora você também pode anexar o caderno aqui.'); });
+  on('passaro', function (e) { som('tinta'); vibrar(20); var n = e.carga.itens.length; toast('O pássaro levou o caderno ao castelo: ' + n + (n === 1 ? ' anotação' : ' anotações') + ' e ' + e.carga.celulas + ' trechos anexados ao mapa. Influência +' + e.carga.ganho + '.'); });
   on('montou', function () { som('lapis'); vibrar(15); });
   on('desmontou', function () { som('lapis'); toast('O cavalo fica aqui até você voltar.'); });
   on('racaoBaixa', function () { toast('A ração está acabando. Pense na volta.'); vibrar(30); });
   on('fome', function () { toast('Acabou a ração. Você anda mais devagar e não consegue correr.'); vibrar([40, 30, 40]); });
-  on('alarme', function () { som('sino'); vibrar([60, 40, 60]); toast('Alarme! Fuja ou se esconda no mato.'); });
-  on('despistou', function () { toast('Você despistou o cavaleiro.'); });
+  on('alarme', function () { som('sino'); vibrar([60, 40, 60]); toast('Alarme! Fuja ou se esconda na mata.'); });
+  on('despistou', function (e) { var c = e.o.def.castelo; toast('Você despistou ' + (c ? 'o Cavaleiro de ' + nomeCurto(c) : 'o cavaleiro inimigo') + '.'); });
   // roubos e batalhas não viram toast no meio da expedição: as notícias chegam na base, no relatório (56_guerra_ui.js)
   on('relatou', function (r) { som('tinta'); mostrarRelatorio(r); salvar(); });
   on('perdeu', function (e) { som('rasgo'); vibrar(120); mostrarPerdido(e); salvar(); });
@@ -3325,7 +3340,7 @@ function mostrarRelatorio(r) {
   var era = r.eraNova ? CONFIG.eras[r.eraNova] : null;
   $('relEra').textContent = !era ? '' : r.eraNova === CONFIG.eras.length - 1 ? 'O reino chegou à Idade Imperial! Agora o exército de cerco pode atacar o ' + descPorId('castelo').nome + ': veja o plano de batalha.' :
     'O reino entrou na ' + era.nome + '! ' + (era.libera ? 'Agora você tem ' + era.libera + '. ' : '') + 'Dá para fundar ' + (era.postos === 1 ? '1 posto avançado.' : era.postos + ' postos avançados.');
-  $('relResumo').textContent = 'Relatado em ' + r.base + '. ' + r.celulas + ' trechos de terreno passados a tinta. Influência +' + r.ganho + ' (total ' + ESTADO.influencia + '). Ração da próxima expedição: ' + racaoMaxima() + ' porções.';
+  $('relResumo').textContent = 'Anexado ' + r.base + ': ' + r.celulas + ' trechos de terreno novos no mapa. Influência +' + r.ganho + ' (total ' + ESTADO.influencia + '). Ração da próxima expedição: ' + racaoMaxima() + ' porções.';
   $('relEstoque').innerHTML = textoEstoque(ESTADO.reino.entregueHoje) + '<br>' + textoMercado(r.trocas) + textoProximaEra();
   $('relatorio').classList.remove('oculto');
 }
@@ -3333,35 +3348,35 @@ function mostrarRelatorio(r) {
 // estoque da cidade em uma linha; 'hoje' mostra quanto chegou nesta expedição
 function textoEstoque(hoje) {
   var roub = ESTADO.reino.roubadoHoje, perdas = CONFIG.reino.recursos.filter(function (r) { return roub[r] > 0; });
-  return '<b>Estoque da cidade:</b> ' + CONFIG.reino.recursos.map(function (r) {
+  return '<b>Estoque do castelo:</b> ' + CONFIG.reino.recursos.map(function (r) {
     return r + ' ' + ESTADO.estoque[r] + (hoje && hoje[r] ? ' <small>(+' + hoje[r] + ')</small>' : '');
   }).join(' · ') + ESTADO.reino.batalhas.map(function (b) { return '<br><span style="color:' + (b.venceu ? '#2f5fa8' : '#a33') + '">Cavaleiros ' + (b.venceu ? 'destruíram' : 'perderam no') + ' ' + b.nome + ' (chance ' + Math.round(b.chance * 100) + '%)</span>'; }).join('') + (perdas.length ? '<br><span style="color:#a33">Roubado por bandidos hoje: ' + perdas.map(function (r) { return roub[r] + ' de ' + r; }).join(', ') + '</span>' : '');
 }
 // lembrete de como parar os bandidos: o próximo passo de cada acampamento que incomoda (mostrado no Mapa)
 function textoBandidos() {
   var lista = situacaoBandidos(); if (!lista.length) return '';
-  function nomes(ids) { return ids.map(function (id) { return DESCOBERTAS.filter(function (x) { return x.id === id; })[0].nome; }).join(', '); }
+  function nomes(ids) { return ids.map(function (id) { return DESCOBERTAS.filter(function (x) { return x.id === id; })[0].nome; }).map(comArtigo).join(', '); }
   var pc = function (b) { return ' (chance ' + Math.round(b.chance * 100) + '%)'; };
   return '<span class="bandidos"><b>Como parar os bandidos</b>' + lista.map(function (b) {
-    var txt = b.passo === 'achar' ? 'Roubam ' + nomes(b.locais) + ' vindos do ' + b.dir + '. Siga a seta vermelha, ache o acampamento e volte para relatar: os cavaleiros atacam acampamentos relatados.' :
+    var txt = b.passo === 'achar' ? 'Roubam ' + nomes(b.locais) + ' vindos do ' + b.dir + '. Siga a seta vermelha, ache o acampamento e anexe-o ao mapa: os cavaleiros atacam os acampamentos que estão no mapa.' :
       b.passo === 'feudal' ? b.nome + ' achado. O reino só tem cavaleiros para atacá-lo a partir da Idade Feudal.' :
-      b.passo === 'proxima' ? b.nome + ' relatado: os cavaleiros atacam na próxima expedição' + pc(b) + '.' :
+      b.passo === 'proxima' ? b.nome + ' está no mapa: os cavaleiros atacam na próxima expedição' + pc(b) + '.' :
       b.passo === 'atacando' ? 'Cavaleiros a caminho do ' + b.nome + pc(b) + '.' :
-      'Cavaleiros perderam no ' + b.nome + pc(b) + '. Eles tentam de novo a cada expedição; observe o acampamento de perto e passe a tinta os arredores para subir a chance.';
+      'Cavaleiros perderam no ' + b.nome + pc(b) + '. Eles tentam de novo a cada expedição; observe o acampamento de perto e anexe os arredores ao mapa para subir a chance.';
     return '<br>• ' + txt;
-  }).join('') + '<br><small>Rota inteira a tinta ganha escolta de cavaleiro e não é roubada.</small></span>';
+  }).join('') + '<br><small>Rota inteira no mapa ganha escolta de cavaleiro e não é roubada.</small></span>';
 }
 // o que falta para a próxima era: diz ao jogador o que procurar
 function textoProximaEra() {
   var i = ESTADO.era + 1; if (i >= CONFIG.eras.length) return '';
   var f = faltaParaEra(i);
-  return '<b>' + CONFIG.eras[i].nome + ':</b> ' + (f.length ? 'falta ' + f.map(function (x) { return x.nome + ' ' + x.falta; }).join(', ') : 'pronta, avança no próximo relatório') +
+  return '<b>' + CONFIG.eras[i].nome + ':</b> ' + (f.length ? 'falta ' + f.map(function (x) { return x.nome + ' ' + x.falta; }).join(', ') : 'pronta, avança quando você anexar o próximo caderno') +
     ' <small>(custa ' + Object.keys(CONFIG.eras[i].custo).map(function (r) { return CONFIG.eras[i].custo[r] + ' de ' + r; }).join(', ') + ')</small>';
 }
 function mostrarPerdido(e) {
   $('perdTitulo').textContent = e.motivo === 'noite' ? 'A noite fechou' : 'Capturado!';
-  $('perdTexto').textContent = (e.motivo === 'noite' ? 'Você não voltou antes do escuro e foi trazido de volta. ' : 'Os guardas escoltaram você até a fronteira. ') +
-    (e.paginas > 0 ? e.paginas + (e.paginas === 1 ? ' anotação a lápis foi rasgada.' : ' anotações a lápis foram rasgadas.') : 'Não havia nada a lápis para perder.') + ' O que já estava relatado continua no mapa.';
+  $('perdTexto').textContent = (e.motivo === 'noite' ? 'Você não voltou antes do escuro e foi levado de volta ao castelo. ' : 'Um cavaleiro inimigo pegou você e o mandou de volta ao castelo. ') +
+    (e.paginas > 0 ? 'Seu caderno foi perdido, com ' + e.paginas + (e.paginas === 1 ? ' anotação.' : ' anotações.') : 'Seu caderno estava vazio.') + ' O que já estava no mapa continua lá.';
   $('perdido').classList.remove('oculto');
 }
 
@@ -3369,11 +3384,11 @@ function mostrarCaderno() {
   var linhas = [];
   ESTADO.caderno.forEach(function (e) {
     var d = DESCOBERTAS.filter(function (x) { return x.id === e.id; })[0];
-    linhas.push('<li class="lapis"><b>' + d.nome + '</b><br><small>' + (e.nivel === 2 ? d.detalhe : 'avistado de longe') + ' · a lápis</small></li>');
+    linhas.push('<li class="lapis"><b>' + d.nome + '</b><br><small>' + (e.nivel === 2 ? d.detalhe : 'avistado de longe') + ' · no caderno</small></li>');
   });
   DESCOBERTAS.forEach(function (d) {
     var n = ESTADO.relatados[d.id];
-    if (n && !entradaDe(d.id)) linhas.push('<li class="tinta"><b>' + d.nome + '</b><br><small>' + (n === 2 ? d.detalhe : 'avistado de longe') + ' · relatado</small></li>');
+    if (n && !entradaDe(d.id)) linhas.push('<li class="tinta"><b>' + d.nome + '</b><br><small>' + (n === 2 ? d.detalhe : 'avistado de longe') + ' · no mapa</small></li>');
   });
   $('cadLista').innerHTML = linhas.join('') || '<li><small>Nada anotado ainda.</small></li>';
   $('caderno').classList.remove('oculto');
@@ -3470,7 +3485,7 @@ function criarAjustes() {
   // menu principal: recarrega no último save; no meio da expedição pede um segundo toque (confirm() é bloqueado no Artifact)
   $('btnSairMenu').addEventListener('click', function () {
     var b = $('btnSairMenu');
-    if (perdeAoSair() && !b.dataset.confirma) { b.dataset.confirma = '1'; b.textContent = 'Toque de novo: o que não foi relatado hoje se perde'; UI.sairAte = setTimeout(desarmarSair, 3000); return; }
+    if (perdeAoSair() && !b.dataset.confirma) { b.dataset.confirma = '1'; b.textContent = 'Toque de novo: o caderno de hoje será perdido'; UI.sairAte = setTimeout(desarmarSair, 3000); return; }
     recarregarMundo();
   });
   aplicarAjustes();
@@ -3537,9 +3552,9 @@ function carregar() {
 // ===== 52_tutorial.js
 // ---- tutorial da primeira expedição: sem tempo, cada passo só avança quando o jogador faz a ação
 // Lê ESTADO (e a câmera para o balão); não muda regra nenhuma. Textos e números em CONFIG.tutorial.
-// Captura no meio: guarda o passo e continua dele na próxima expedição. Entregar o relatório encerra.
+// Captura no meio: guarda o passo e continua dele na próxima expedição. Anexar o caderno ao mapa encerra.
 var CHAVE_TUTORIAL = 'the-scout-tutorial', CHAVE_TUTORIAL_PASSO = 'the-scout-tutorial-passo';
-var TUTORIAL = { ativo: false, passo: 0, x0: 0, z0: 0, correu: 0, achado: null, torre: 'espera', olheiro: null, escondido: 0, mostrado: '' };
+var TUTORIAL = { ativo: false, passo: 0, x0: 0, z0: 0, correu: 0, achado: null, mostrado: '' };
 
 function tutorialFeito() { try { return localStorage.getItem(CHAVE_TUTORIAL) === '1'; } catch (e) { return false; } }
 function marcarTutorialFeito() { try { localStorage.setItem(CHAVE_TUTORIAL, '1'); localStorage.removeItem(CHAVE_TUTORIAL_PASSO); } catch (e) { /* sem armazenamento */ } }
@@ -3561,7 +3576,7 @@ function criarTutorial() {
 
 function iniciarTutorial(passo) {
   TUTORIAL.ativo = true; TUTORIAL.visto = true; TUTORIAL.passo = Math.min(passo, CONFIG.tutorial.passos.length - 1);
-  TUTORIAL.torre = 'espera'; TUTORIAL.olheiro = null; TUTORIAL.mostrado = '';
+  TUTORIAL.mostrado = '';
   comecarPasso();
 }
 
@@ -3586,10 +3601,9 @@ function mostrarTutorial(chave, texto, andar) {
   if (TUTORIAL.mostrado === chave) return;
   TUTORIAL.mostrado = chave;
   $('tutTexto').innerHTML = texto;
-  $('tutPontos').textContent = TUTORIAL.torre === 'mostrando' ? '' :
-    CONFIG.tutorial.passos.map(function (q, i) { return i === TUTORIAL.passo ? '●' : '○'; }).join(' ');
+  $('tutPontos').textContent = CONFIG.tutorial.passos.map(function (q, i) { return i === TUTORIAL.passo ? '●' : '○'; }).join(' ');
   el.classList.toggle('arrastar', !!andar);
-  el.classList.toggle('ultimo', chave === 'p' + (CONFIG.tutorial.passos.length - 1));
+  el.classList.toggle('ultimo', TUTORIAL.passo === CONFIG.tutorial.passos.length - 1);
   el.classList.remove('oculto', 'entra'); void el.offsetWidth; el.classList.add('entra');   // reinicia a animação de entrada
 }
 
@@ -3599,19 +3613,12 @@ function primeiroLapis() {
   return null;
 }
 
-// dica da torre: fora da fila, quando uma torre ou patrulha chega perto
-function vigiarDicaTorre(dt) {
-  var T = CONFIG.tutorial, j = ESTADO.jog;
-  if (TUTORIAL.torre === 'espera') {
-    ESTADO.olheiros.forEach(function (o) {
-      if (TUTORIAL.olheiro || o.def.tipo === 'cao' || !olheiroAtivo(o) || naBase(j.x, j.z)) return;
-      if (dist2(o.x, o.z, j.x, j.z) < T.torrePerto * T.torrePerto) { TUTORIAL.olheiro = o; TUTORIAL.torre = 'mostrando'; TUTORIAL.escondido = 0; }
-    });
-  } else if (TUTORIAL.torre === 'mostrando') {
-    var o = TUTORIAL.olheiro;
-    TUTORIAL.escondido = j.escondido ? TUTORIAL.escondido + dt : 0;
-    if (TUTORIAL.escondido >= T.torreEsconde || dist2(o.x, o.z, j.x, j.z) > T.torreLonge * T.torreLonge) { TUTORIAL.torre = 'feita'; som('lapis'); }
-  }
+// o card do primeiro achado fala dele pelo nome: {achado} = "a Vila de Ribeira", {ele} = ela/ele
+function textoPasso(p) {
+  var d = TUTORIAL.achado && descPorId(TUTORIAL.achado);
+  if (!d) return p.texto.replace('{achado}', 'algo novo').replace('{ele}', 'ele');
+  var fem = feminino(d.nome);
+  return p.texto.replace('{achado}', (fem ? 'a' : 'o') + ' <b>' + d.nome + '</b>').replace('{ele}', fem ? 'ela' : 'ele');
 }
 
 function passoPronto(p, dt) {
@@ -3633,7 +3640,6 @@ function atualizarTutorial() {
   if (ESTADO.fase !== 'expedicao') { $('tutorial').classList.add('oculto'); balao.classList.add('oculto'); TUTORIAL.mostrado = ''; return; }
   var dt = Math.max(0, ESTADO.tempo - (TUTORIAL.t || ESTADO.tempo)); TUTORIAL.t = ESTADO.tempo;
   var passos = CONFIG.tutorial.passos, p = passos[TUTORIAL.passo];
-  vigiarDicaTorre(dt);
   if (passoPronto(p, dt) && TUTORIAL.passo < passos.length - 1) {
     TUTORIAL.passo++; p = passos[TUTORIAL.passo]; comecarPasso(); som('lapis');
   }
@@ -3641,9 +3647,8 @@ function atualizarTutorial() {
   if (p.espera === 'tinta' && !passoPronto(p, 0) && !TUTORIAL.achado) {
     TUTORIAL.passo--; p = passos[TUTORIAL.passo]; comecarPasso();
   }
-  if (TUTORIAL.torre === 'mostrando') mostrarTutorial('torre', CONFIG.tutorial.torre, false);
-  else mostrarTutorial('p' + TUTORIAL.passo, p.texto, p.espera === 'andar');
-  posicionarBalao(balao, p.espera === 'tinta' && TUTORIAL.torre !== 'mostrando' ? TUTORIAL.achado : null, p.balao);
+  mostrarTutorial('p' + TUTORIAL.passo + (p.espera === 'tinta' ? ':' + TUTORIAL.achado : ''), textoPasso(p), p.espera === 'andar');
+  posicionarBalao(balao, p.espera === 'tinta' ? TUTORIAL.achado : null, p.balao);
 }
 
 // balão preso em cima do lugar achado, na posição dele na tela
@@ -3818,9 +3823,9 @@ function mostrarGuerra(soPlano) {
       (n.fim ? '<br>O reino venceu a guerra. O mapa desta região está completo.' : '') + '</div>';
   });
   (UIG.roubosVistos || []).forEach(function (r) {
-    html += '<div class="noticia">Bandidos roubaram perto de <b>' + r.nome + '</b> (' + Object.keys(r.qtd).map(function (k) { return r.qtd[k] + ' de ' + k; }).join(', ') + '). Vieram do ' + r.dir + ' de lá.</div>';
+    html += '<div class="noticia">Bandidos roubaram perto ' + (feminino(r.nome) ? 'da' : 'do') + ' <b>' + r.nome + '</b> (' + Object.keys(r.qtd).map(function (k) { return r.qtd[k] + ' de ' + k; }).join(', ') + '). Vieram do ' + r.dir + ' de lá.</div>';
   });
-  if (!ESTADO.relatados.castelo && !g.tomados.castelo) html += '<p><small>Boato do rei: o reino rival fica ao ' + direcaoDe(CONFIG.base, descPorId('castelo')) + alemDoRio() + '.</small></p>';
+  if (!ESTADO.relatados.castelo && !g.tomados.castelo) html += '<p><small>Boato do rei: o reino de ' + nomeCurto('castelo') + ' fica ao ' + direcaoDe(CONFIG.base, descPorId('castelo')) + alemDoRio() + '.</small></p>';
   if (g.ataque) html += '<div class="plano"><b>Ataque marcado:</b> o exército marcha contra ' + descPorId(g.ataque.alvo).nome + ' na próxima expedição. Assista do alto de um mirante.</div>';
   alvosVisiveis().forEach(function (id) { html += textoPlano(planoBatalha(id)); });
   $('relGuerra').innerHTML = html;
